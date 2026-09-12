@@ -96,6 +96,18 @@ vec3 rotateSphereDirection(vec3 localDirection, float sphere) {
     return rotateAroundAxis(localDirection, axis, angle);
 }
 
+vec3 unrotateSphereDirection(vec3 direction, float sphere) {
+    float identity = sphere + pc.motion.x * 17.0;
+    vec3 axis = vec3(hashScalar(identity + 1.3), hashScalar(identity + 7.1),
+                     hashScalar(identity + 13.7)) * 2.0 - 1.0;
+    axis = normalize(axis + vec3(0.001, 0.002, 0.003));
+    float randomSpeed = mix(0.55, 1.45, hashScalar(identity + 23.9));
+    float speed = mix(1.0, randomSpeed, pc.wave.x);
+    float rotationDirection = hashScalar(identity + 31.7) < 0.5 ? -1.0 : 1.0;
+    float angle = mod(pc.view.z * speed * rotationDirection, TAU);
+    return rotateAroundAxis(direction, axis, -angle);
+}
+
 vec3 nestedSpherePoint(float longitude, float latitudeParameter, float sphere) {
     vec3 localDirection = localSphereDirection(longitude, latitudeParameter);
     return nestedSphereCenter(sphere)
@@ -275,6 +287,14 @@ vec3 toView(vec3 p) {
     p.xy = mat2(c, s, -s, c) * p.xy;
     c = cos(pc.look.x); s = sin(pc.look.x);
     p.yz = mat2(c, s, -s, c) * p.yz;
+    return p;
+}
+
+vec3 fromView(vec3 p) {
+    float c = cos(pc.look.x), s = sin(pc.look.x);
+    p.yz = mat2(c, -s, s, c) * p.yz;
+    c = cos(pc.view.w); s = sin(pc.view.w);
+    p.xy = mat2(c, -s, s, c) * p.xy;
     return p;
 }
 

@@ -20,13 +20,6 @@ void main() {
         float radial = sqrt(max(0.0, 1.0 - y * y));
         float angle = goldenAngle * float(pointIndex);
         vec3 localDirection = vec3(radial * cos(angle), y, radial * sin(angle));
-        if (insideSphereHole(localDirection)) {
-            pointColor = vec3(0.0);
-            pointFacing = 0.0;
-            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-            return;
-        }
-
         vec3 position = nestedSphereCenter(float(sphereIndex))
                       + nestedSphereRadius(float(sphereIndex))
                       * rotateSphereDirection(localDirection, float(sphereIndex));
@@ -39,7 +32,9 @@ void main() {
         radiusPixels = max(radiusPixels, 0.30);
         vec3 tint = pc.style.x >= 0.0 ? pc.style.rgb : vec3(0.55, 0.72, 1.0);
         pointColor = tint * illumination * pc.look.z;
-        pointFacing = 1.0;
+        // The fragment shader uses the sign to select the matching ray/sphere
+        // intersection before evaluating the animated hole mask.
+        pointFacing = normal.z;
 
         vec4 clip = projectPoint(position);
         clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
