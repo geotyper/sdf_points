@@ -31,7 +31,7 @@ struct ComputeOutput {
 };
 
 struct BraidSettings {
-    int geometryMode{0}; // 0: plait, 1: twisted bundle, 2: whole-loop torsion, 3: orbital bloom
+    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres
     bool paused{};
     bool autoRotate{false};
     bool limitTubeOverlap{false};
@@ -58,6 +58,29 @@ struct BraidSettings {
     int minorPointCount{40};
 };
 
+struct NestedSphereSettings {
+    bool paused{};
+    bool offsetCenters{};
+    int visibilityMode{1}; // 0: hidden surface, 1: point depth, 2: all transparent
+    float animationSpeed{0.38F};
+    float speedVariation{0.65F};
+    float centerOffset{0.45F};
+    float pointOpacity{0.55F};
+    float outerRadius{1.35F};
+    float minimumRadiusRatio{0.10F};
+    float radiusCurve{1.0F};
+    float holeAngle{0.27F};
+    float pointSize{1.45F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.18F};
+    int sphereCount{6};
+    int holeCount{12};
+    int pointCount{12000};
+    int depthSortLayers{48};
+    int directionSeed{1};
+};
+
 struct StrandPalette {
     bool enabled{false};
     std::array<std::array<float, 3>, 5> colors{{
@@ -70,12 +93,16 @@ struct StrandPalette {
 };
 
 struct DemoState {
-    explicit DemoState(Preset selectedPreset) : preset(std::move(selectedPreset)) {}
+    explicit DemoState(Preset selectedPreset) : preset(std::move(selectedPreset)) {
+        braid.geometryMode = preset.initialGeometryMode;
+        palette.enabled = braid.geometryMode == 4;
+    }
 
     Preset preset;
     RenderViewport viewport;
     ComputeOutput blur;
     BraidSettings braid;
+    NestedSphereSettings nestedSpheres;
     StrandPalette palette;
 };
 

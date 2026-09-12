@@ -46,6 +46,29 @@ button applies a tuned combination of thickness, twist, tilt and speed; selectin
 the geometry alone keeps the current controls. Its sections remain circular and
 **Flow speed** controls the complete animation.
 
+**Nested spheres** adds concentric point-cloud shells whose radii run from the
+outer radius down to exactly 10% of it. Every shell has the same Fibonacci-distributed
+set of circular openings and rotates around its own deterministic random axis and
+direction. Openings are removed from both the point cloud and its hidden depth skin,
+so inner shells remain visible through them. Each shell takes the next palette color,
+wrapping to the first color when the five entries are exhausted. Launch this scene
+directly with `--preset nested-spheres`, or choose it from **Geometry**. Its controls
+include shell and hole counts, opening radius, spacing curve, rotation speed and
+variation, outer-shell sampling density, point appearance, tilt, palette editing,
+and a button for generating a new set of rotation directions. Inner-shell point
+counts scale with surface area, preserving a consistent density as radii shrink.
+Optional center offsets can push smaller shells through neighbouring surfaces and,
+at high values, partly beyond the outer shell.
+The depth-based visibility is two-sided, allowing rear-side points to appear through
+openings when they are not covered by another shell.
+
+**Visibility** offers three treatments. **Surface occlusion** uses the hidden solid
+shells. **Points only** removes those shells and lets the point sprites themselves
+write depth, exposing inner spheres through the gaps without showing every rear point.
+**All transparent** submits configurable depth buckets from far to near and shows the
+complete cloud; **Depth sort layers** trades performance for finer ordering, while
+**Point opacity** controls how strongly its nested layers accumulate.
+
 **Color per tube** enables an editable five-color palette (coral, amber, mint,
 blue and violet). Each strand keeps its assigned color throughout deformation;
 lighting still controls brightness and point size. Set **Strands** to 5 to use

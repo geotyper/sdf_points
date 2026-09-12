@@ -10,8 +10,97 @@ layout(push_constant) uniform BraidPush {
 } pc;
 
 const float TAU = 6.28318530718;
+const float PI = 3.14159265359;
 const int SURFACE_ROWS = 720;
 const int SURFACE_COLUMNS = 64;
+const int MAX_SPHERE_HOLES = 32;
+const int MAX_NESTED_SPHERES = 12;
+
+bool nestedSphereMode() {
+    return pc.style.w > 3.5;
+}
+
+float hashScalar(float value) {
+    return fract(sin(value * 127.1) * 43758.5453123);
+}
+
+vec3 sphereHoleDirection(int index, int count) {
+    const float goldenAngle = 2.39996322973;
+    float y = 1.0 - 2.0 * (float(index) + 0.5) / float(count);
+    float radial = sqrt(max(0.0, 1.0 - y * y));
+    float angle = goldenAngle * float(index);
+    return vec3(radial * cos(angle), y, radial * sin(angle));
+}
+
+bool insideSphereHole(vec3 localDirection) {
+    int holeCount = clamp(int(pc.shape.w + 0.5), 1, MAX_SPHERE_HOLES);
+    float edge = cos(pc.shape.z);
+    for (int hole = 0; hole < MAX_SPHERE_HOLES; ++hole) {
+        if (hole >= holeCount) break;
+        if (dot(localDirection, sphereHoleDirection(hole, holeCount)) > edge) {
+            return true;
+        }
+    }
+    return false;
+}
+
+vec3 localSphereDirection(float longitude, float latitudeParameter) {
+    float latitude = -0.5 * PI + 0.5 * latitudeParameter;
+    float ring = cos(latitude);
+    return vec3(ring * cos(longitude), sin(latitude), ring * sin(longitude));
+}
+
+float nestedSphereRadius(float sphere) {
+    float denominator = max(pc.points.w - 1.0, 1.0);
+    float sequence = clamp(sphere / denominator, 0.0, 1.0);
+    return pc.shape.x * mix(1.0, pc.shape.y, pow(sequence, pc.look.w));
+}
+
+vec3 nestedSphereCenter(float sphere) {
+    float identity = sphere + pc.motion.x * 17.0;
+    vec3 direction = vec3(hashScalar(identity + 41.3), hashScalar(identity + 47.9),
+                          hashScalar(identity + 53.1)) * 2.0 - 1.0;
+    direction = normalize(direction + vec3(0.003, 0.001, 0.002));
+    float sequence = sphere / max(pc.points.w - 1.0, 1.0);
+    float displacement = pc.shape.x * pc.motion.w * pow(sequence, 0.45);
+    return direction * displacement;
+}
+
+float nestedSphereSpan() {
+    int sphereCount = clamp(int(pc.points.w + 0.5), 2, MAX_NESTED_SPHERES);
+    float largestExtent = 1.0;
+    for (int sphere = 1; sphere < MAX_NESTED_SPHERES; ++sphere) {
+        if (sphere >= sphereCount) break;
+        float sequence = float(sphere) / float(sphereCount - 1);
+        float radiusRatio = mix(1.0, pc.shape.y, pow(sequence, pc.look.w));
+        float offsetRatio = pc.motion.w * pow(sequence, 0.45);
+        largestExtent = max(largestExtent, radiusRatio + offsetRatio);
+    }
+    return pc.shape.x * largestExtent * 1.10;
+}
+
+vec3 rotateAroundAxis(vec3 value, vec3 axis, float angle) {
+    float c = cos(angle), s = sin(angle);
+    return value * c + cross(axis, value) * s + axis * dot(axis, value) * (1.0 - c);
+}
+
+vec3 rotateSphereDirection(vec3 localDirection, float sphere) {
+    float identity = sphere + pc.motion.x * 17.0;
+    vec3 axis = vec3(hashScalar(identity + 1.3), hashScalar(identity + 7.1),
+                     hashScalar(identity + 13.7)) * 2.0 - 1.0;
+    axis = normalize(axis + vec3(0.001, 0.002, 0.003));
+    float randomSpeed = mix(0.55, 1.45, hashScalar(identity + 23.9));
+    float speed = mix(1.0, randomSpeed, pc.wave.x);
+    float direction = hashScalar(identity + 31.7) < 0.5 ? -1.0 : 1.0;
+    float angle = mod(pc.view.z * speed * direction, TAU);
+    return rotateAroundAxis(localDirection, axis, angle);
+}
+
+vec3 nestedSpherePoint(float longitude, float latitudeParameter, float sphere) {
+    vec3 localDirection = localSphereDirection(longitude, latitudeParameter);
+    return nestedSphereCenter(sphere)
+         + nestedSphereRadius(sphere) * rotateSphereDirection(localDirection, sphere);
+}
 
 float releaseEnvelope(float u) {
     // Smooth and periodic even as the wave crosses the material seam at 2*pi.
@@ -163,6 +252,9 @@ void tubeFrame(float u, float strand, out vec3 center, out vec3 tangent,
 }
 
 vec3 surfacePoint(float u, float v, float strand) {
+    if (nestedSphereMode()) {
+        return nestedSpherePoint(u, v, strand);
+    }
     vec3 center, tangent, x, y;
     float radius;
     tubeFrame(u, strand, center, tangent, x, y, radius);
@@ -170,6 +262,9 @@ vec3 surfacePoint(float u, float v, float strand) {
 }
 
 vec3 surfaceNormal(float u, float v, float strand) {
+    if (nestedSphereMode()) {
+        return rotateSphereDirection(localSphereDirection(u, v), strand);
+    }
     vec3 du = surfacePoint(u + 0.0005, v, strand) - surfacePoint(u - 0.0005, v, strand);
     vec3 dv = surfacePoint(u, v + 0.0005, strand) - surfacePoint(u, v - 0.0005, strand);
     return normalize(cross(dv, du));
@@ -200,6 +295,9 @@ vec4 projectPoint(vec3 p) {
     if (pc.style.w > 2.5) {
         span = (pc.shape.x * 1.18 + pc.shape.y * 1.12 + pc.shape.z * (1.0 + pc.look.w)
               + 0.16 * pc.shape.x * abs(sin(pc.look.x))) * 1.10;
+    }
+    if (nestedSphereMode()) {
+        span = nestedSphereSpan();
     }
     vec2 scale = min(pc.view.x, pc.view.y) / pc.view.xy;
     return vec4(p.xy * vec2(1.0, -1.0) * scale / span, (4.0 - p.z) / 8.0, 1.0);

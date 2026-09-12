@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <stdexcept>
 
@@ -146,13 +147,17 @@ void GraphicsModule::onAttach(AppContext& context) {
                                   pipeline_.put(device)) != VK_SUCCESS) {
         throw std::runtime_error("Unable to create graphics pipeline");
     }
+    rendering.depthAttachmentFormat = depthFormat_;
+    depthState.depthTestEnable = VK_TRUE;
+    depthState.depthWriteEnable = VK_TRUE;
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+                                  pointDepthPipeline_.put(device)) != VK_SUCCESS) {
+        throw std::runtime_error("Unable to create point depth pipeline");
+    }
     stages[0].module = surfaceVertex.get();
     stages[1].module = surfaceFragment.get();
     blendAttachment.colorWriteMask = 0;
     blendAttachment.blendEnable = VK_FALSE;
-    rendering.depthAttachmentFormat = depthFormat_;
-    depthState.depthTestEnable = VK_TRUE;
-    depthState.depthWriteEnable = VK_TRUE;
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
                                   surfacePipeline_.put(device)) != VK_SUCCESS) {
         throw std::runtime_error("Unable to create braid depth pipeline");
@@ -205,7 +210,11 @@ void GraphicsModule::destroyRenderTarget() {
 
 void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
     auto cpuScope = context.profiler.cpu().scope(metric_);
-    if (!state_.braid.paused) {
+    if (state_.braid.geometryMode == 4) {
+        if (!state_.nestedSpheres.paused) {
+            nestedSphereTime_ += frame.deltaSeconds * state_.nestedSpheres.animationSpeed;
+        }
+    } else if (!state_.braid.paused) {
         weaveTime_ += frame.deltaSeconds * state_.braid.animationSpeed;
         if (state_.braid.autoRotate) {
             rotationTime_ += frame.deltaSeconds * state_.braid.rotationSpeed;
@@ -298,44 +307,89 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         vkCmdSetViewport(commands, 0, 1, &viewport);
         vkCmdSetScissor(commands, 0, 1, &scissor);
         const auto& braid = state_.braid;
-        const std::array<float, 28> pushConstants{
-            static_cast<float>(extent.width),
-            static_cast<float>(extent.height),
-            weaveTime_,
-            rotationTime_,
-            braid.majorRadius,
-            braid.weaveRadius,
-            braid.tubeRadius,
-            static_cast<float>(braid.twists),
-            static_cast<float>(braid.majorPointCount),
-            static_cast<float>(braid.minorPointCount),
-            braid.pointSize,
-            static_cast<float>(braid.strands),
-            braid.tilt,
-            braid.glow,
-            braid.brightness,
-            braid.radiusVariation,
-            -1.0F,
-            -1.0F,
-            -1.0F,
-            static_cast<float>(braid.geometryMode),
-            braid.releaseStrength,
-            braid.releaseWidth,
-            braid.releaseSpeed,
-            braid.squareness,
-            braid.wholeLoopTorsion,
-            braid.torsionCompression,
-            braid.materialCirculation,
-            braid.limitTubeOverlap ? 1.0F : 0.0F,
-        };
+        const bool pointDepthSpheres =
+            braid.geometryMode == 4 && state_.nestedSpheres.visibilityMode == 1;
+        const bool transparentSpheres =
+            braid.geometryMode == 4 && state_.nestedSpheres.visibilityMode == 2;
+        const bool spheresWithoutSurface = pointDepthSpheres || transparentSpheres;
+        std::array<float, 28> pushConstants{};
+        if (braid.geometryMode == 4) {
+            const auto& spheres = state_.nestedSpheres;
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                nestedSphereTime_,
+                0.0F,
+                spheres.outerRadius,
+                spheres.minimumRadiusRatio,
+                spheres.holeAngle,
+                static_cast<float>(spheres.holeCount),
+                static_cast<float>(spheres.pointCount),
+                spheres.pointOpacity,
+                spheres.pointSize,
+                static_cast<float>(spheres.sphereCount),
+                spheres.tilt,
+                spheres.glow,
+                spheres.brightness,
+                spheres.radiusCurve,
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                4.0F,
+                spheres.speedVariation,
+                static_cast<float>(spheres.visibilityMode),
+                0.0F,
+                static_cast<float>(spheres.depthSortLayers),
+                static_cast<float>(spheres.directionSeed),
+                0.0F,
+                0.0F,
+                spheres.offsetCenters ? spheres.centerOffset : 0.0F,
+            };
+        } else {
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                weaveTime_,
+                rotationTime_,
+                braid.majorRadius,
+                braid.weaveRadius,
+                braid.tubeRadius,
+                static_cast<float>(braid.twists),
+                static_cast<float>(braid.majorPointCount),
+                static_cast<float>(braid.minorPointCount),
+                braid.pointSize,
+                static_cast<float>(braid.strands),
+                braid.tilt,
+                braid.glow,
+                braid.brightness,
+                braid.radiusVariation,
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                static_cast<float>(braid.geometryMode),
+                braid.releaseStrength,
+                braid.releaseWidth,
+                braid.releaseSpeed,
+                braid.squareness,
+                braid.wholeLoopTorsion,
+                braid.torsionCompression,
+                braid.materialCirculation,
+                braid.limitTubeOverlap ? 1.0F : 0.0F,
+            };
+        }
         vkCmdPushConstants(commands, pipelineLayout_,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            static_cast<std::uint32_t>(sizeof(pushConstants)), pushConstants.data());
         // Both passes use the same periodic surface and flow phase. The closed
         // depth-only skin hides rear points even in the gaps between sprites.
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, surfacePipeline_);
-        vkCmdDraw(commands, 720U * 64U * 6U, static_cast<std::uint32_t>(braid.strands), 0, 0);
+        const auto objectCount = static_cast<std::uint32_t>(
+            braid.geometryMode == 4 ? state_.nestedSpheres.sphereCount : braid.strands);
+        if (!spheresWithoutSurface) {
+            vkCmdDraw(commands, 720U * 64U * 6U, objectCount, 0, 0);
+        }
         vkCmdEndRendering(commands);
+        depthLayout_ = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
         VkImageMemoryBarrier2 sampleDepth{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         sampleDepth.srcStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
@@ -356,26 +410,81 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         preserveColor.dstAccessMask =
             VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         preserveColor.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        const std::array sampleBarriers{sampleDepth, preserveColor};
-        dependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(sampleBarriers.size());
-        dependency.pImageMemoryBarriers = sampleBarriers.data();
-        vkCmdPipelineBarrier2(commands, &dependency);
-        depthLayout_ = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        if (!spheresWithoutSurface) {
+            const std::array sampleBarriers{sampleDepth, preserveColor};
+            dependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(sampleBarriers.size());
+            dependency.pImageMemoryBarriers = sampleBarriers.data();
+            vkCmdPipelineBarrier2(commands, &dependency);
+            depthLayout_ = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        } else if (pointDepthSpheres) {
+            sampleDepth.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                                       VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+            sampleDepth.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            sampleDepth.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            const std::array pointBarriers{sampleDepth, preserveColor};
+            dependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(pointBarriers.size());
+            dependency.pImageMemoryBarriers = pointBarriers.data();
+            vkCmdPipelineBarrier2(commands, &dependency);
+        } else {
+            dependency.imageMemoryBarrierCount = 1;
+            dependency.pImageMemoryBarriers = &preserveColor;
+            vkCmdPipelineBarrier2(commands, &dependency);
+        }
 
         attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        rendering.pDepthAttachment = nullptr;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        rendering.pDepthAttachment = pointDepthSpheres ? &depthAttachment : nullptr;
         vkCmdBeginRendering(commands, &rendering);
-        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
+        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          pointDepthSpheres ? pointDepthPipeline_.get() : pipeline_.get());
         vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
                                 &depthSet_, 0, nullptr);
-        const auto pointsPerStrand =
-            static_cast<std::uint32_t>(braid.majorPointCount * braid.minorPointCount);
-        if (state_.palette.enabled) {
+        if (braid.geometryMode == 4) {
+            const auto& spheres = state_.nestedSpheres;
+            const auto drawSphereLayer = [&](const std::uint32_t layer) {
+                const float layerValue = static_cast<float>(layer);
+                vkCmdPushConstants(commands, pipelineLayout_,
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   22U * sizeof(float), sizeof(float), &layerValue);
+                for (std::uint32_t sphere = 0; sphere < objectCount; ++sphere) {
+                    const float sequence = static_cast<float>(sphere) /
+                                           static_cast<float>(std::max(spheres.sphereCount - 1, 1));
+                    const float radiusRatio = 1.0F - (1.0F - spheres.minimumRadiusRatio) *
+                                                         std::pow(sequence, spheres.radiusCurve);
+                    const auto spherePointCount = static_cast<std::uint32_t>(
+                        std::max(1L, std::lround(static_cast<float>(spheres.pointCount) *
+                                                 radiusRatio * radiusRatio)));
+                    const auto& tint = state_.palette.colors[sphere % state_.palette.colors.size()];
+                    vkCmdPushConstants(commands, pipelineLayout_,
+                                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                       16U * sizeof(float), 3U * sizeof(float), tint.data());
+                    const std::array sphereDraw{static_cast<float>(sphere),
+                                                static_cast<float>(spherePointCount)};
+                    vkCmdPushConstants(commands, pipelineLayout_,
+                                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                       25U * sizeof(float),
+                                       static_cast<std::uint32_t>(sizeof(sphereDraw)),
+                                       sphereDraw.data());
+                    vkCmdDraw(commands, 6, spherePointCount, 0, 0);
+                }
+            };
+            if (transparentSpheres) {
+                // Depth buckets are submitted from far to near so alpha blending
+                // composes the complete point cloud without a depth surface.
+                for (int layer = 0; layer < spheres.depthSortLayers; ++layer) {
+                    drawSphereLayer(static_cast<std::uint32_t>(layer));
+                }
+            } else {
+                drawSphereLayer(0);
+            }
+        } else if (state_.palette.enabled) {
+            const auto pointsPerStrand =
+                static_cast<std::uint32_t>(braid.majorPointCount * braid.minorPointCount);
             // Draw each stable strand ID with its palette entry. firstInstance
             // preserves the original material coordinates in the vertex shader.
             // Reuse the existing style RGB push constants (no larger GPU block).
-            for (std::uint32_t strand = 0; strand < static_cast<std::uint32_t>(braid.strands);
-                 ++strand) {
+            for (std::uint32_t strand = 0; strand < objectCount; ++strand) {
                 const auto& tint = state_.palette.colors[strand % state_.palette.colors.size()];
                 vkCmdPushConstants(commands, pipelineLayout_,
                                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -383,6 +492,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 vkCmdDraw(commands, 6, pointsPerStrand, 0, strand * pointsPerStrand);
             }
         } else {
+            const auto pointsPerStrand =
+                static_cast<std::uint32_t>(braid.majorPointCount * braid.minorPointCount);
             vkCmdDraw(commands, 6, pointsPerStrand * static_cast<std::uint32_t>(braid.strands), 0,
                       0);
         }
@@ -414,6 +525,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
 void GraphicsModule::onDetach(AppContext&) {
     destroyRenderTarget();
     pipeline_.reset();
+    pointDepthPipeline_.reset();
     surfacePipeline_.reset();
     pipelineLayout_.reset();
     depthSet_ = VK_NULL_HANDLE;

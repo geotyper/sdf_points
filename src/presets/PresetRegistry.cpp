@@ -10,12 +10,21 @@ namespace vkexp {
 
 PresetRegistry::PresetRegistry()
     : presets_{
-          Preset{"graphics", "Graphics pipeline", true, false,
+          Preset{"graphics", "Graphics pipeline", true, false, {0.004F, 0.0003F, 0.004F, 1.0F}},
+          Preset{"compute", "Compute dispatch", false, true, {0.025F, 0.025F, 0.025F, 1.0F}},
+          Preset{"mixed",
+                 "Graphics and compute pipelines together",
+                 true,
+                 true,
                  {0.004F, 0.0003F, 0.004F, 1.0F}},
-          Preset{"compute", "Compute dispatch", false, true,
-                 {0.025F, 0.025F, 0.025F, 1.0F}},
-          Preset{"mixed", "Graphics and compute pipelines together", true, true,
-                 {0.004F, 0.0003F, 0.004F, 1.0F}},
+          Preset{"nested-spheres",
+                 "Nested rotating point spheres with circular openings",
+                 true,
+                 false,
+                 {0.002F, 0.003F, 0.012F, 1.0F},
+                 1280,
+                 720,
+                 4},
       } {}
 
 void PresetRegistry::loadWindowPreset(const std::string_view path) {

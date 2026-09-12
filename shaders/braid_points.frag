@@ -15,5 +15,6 @@ void main() {
     // A small spherical highlight inside each disc; no broad blurry halo.
     float sphere = sqrt(max(0.0, 1.0 - min(r * r, 1.0)));
     vec3 color = pointColor * (0.72 + 0.28 * sphere + 0.12 * pc.look.y * sphere * sphere);
-    outColor = vec4(color, coverage * pointVisibility);
+    float opacity = nestedSphereMode() && pc.wave.y > 1.5 ? pc.points.y : 1.0;
+    outColor = vec4(color, coverage * pointVisibility * opacity);
 }

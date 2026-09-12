@@ -56,9 +56,11 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 3, "Built-in preset count");
+    check(registry.all().size() == 4, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
+    check(registry.require("nested-spheres").initialGeometryMode == 4,
+          "Nested spheres initial geometry");
 
     registry.loadWindowPreset(VKEXP_TEST_WINDOW_PRESET);
     for (const auto& preset : registry.all()) {

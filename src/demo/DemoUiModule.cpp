@@ -47,82 +47,131 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
     ImGui::Checkbox("Compute pipeline", &state_.preset.computeEnabled);
     ImGui::ColorEdit3("Clear color", &state_.preset.clearColor.x);
 
-    ImGui::SeparatorText("Point braid");
+    ImGui::SeparatorText("Point geometry");
     auto& braid = state_.braid;
     ImGui::Combo("Geometry", &braid.geometryMode,
-                 "Plait\0Twisted bundle\0Torsion loop\0Orbital bloom\0");
-    if (ImGui::Button("Orbital bloom preset")) {
-        braid = BraidSettings{};
-        braid.geometryMode = 3;
-        braid.majorRadius = 1.20F;
-        braid.weaveRadius = 0.25F;
-        braid.tubeRadius = 0.145F;
-        braid.twists = 2;
-        braid.radiusVariation = 0.25F;
-        braid.tilt = 0.28F;
-        braid.animationSpeed = 0.55F;
-    }
-    ImGui::Checkbox("Pause", &braid.paused);
-    ImGui::SameLine();
-    ImGui::Checkbox("Auto rotate", &braid.autoRotate);
-    ImGui::SliderFloat("Flow speed", &braid.animationSpeed, 0.0F, 2.0F, "%.2f");
-    ImGui::BeginDisabled(!braid.autoRotate);
-    ImGui::SliderFloat("Rotation speed", &braid.rotationSpeed, -0.5F, 0.5F, "%.2f");
-    ImGui::EndDisabled();
-    ImGui::SliderInt("Strands", &braid.strands, 2, 5);
-    ImGui::SliderInt("Twists", &braid.twists, 1, 6);
-    ImGui::SliderFloat("Ring radius", &braid.majorRadius, 0.9F, 1.5F, "%.2f");
-    if (braid.geometryMode != 3) {
-        ImGui::SliderFloat("Square shape", &braid.squareness, 2.0F, 6.0F, "%.2f");
-    }
-    ImGui::SliderFloat("Weave radius", &braid.weaveRadius, 0.15F, 0.52F, "%.2f");
-    ImGui::SliderFloat("Tube radius", &braid.tubeRadius, 0.12F, 0.32F, "%.3f");
-    if (braid.geometryMode != 0) {
-        ImGui::Checkbox("Limit tube overlap", &braid.limitTubeOverlap);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip(
-                "Caps thickness using strand spacing and twist.\n"
-                "Off: Tube radius controls thickness directly; large tubes may overlap.");
+                 "Plait\0Twisted bundle\0Torsion loop\0Orbital bloom\0Nested spheres\0");
+    if (braid.geometryMode == 4) {
+        auto& spheres = state_.nestedSpheres;
+        ImGui::Checkbox("Pause", &spheres.paused);
+        ImGui::SliderFloat("Rotation speed", &spheres.animationSpeed, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Speed variation", &spheres.speedVariation, 0.0F, 1.0F, "%.2f");
+        ImGui::SliderInt("Spheres", &spheres.sphereCount, 2, 12);
+        ImGui::SliderFloat("Outer radius", &spheres.outerRadius, 0.85F, 1.65F, "%.2f");
+        ImGui::SliderFloat("Radius spacing", &spheres.radiusCurve, 0.35F, 2.5F, "%.2f");
+        ImGui::TextDisabled("Innermost radius: 10%% of outer radius");
+        ImGui::Checkbox("Offset sphere centers", &spheres.offsetCenters);
+        ImGui::BeginDisabled(!spheres.offsetCenters);
+        ImGui::SliderFloat("Center offset", &spheres.centerOffset, 0.0F, 1.50F, "%.2f");
+        ImGui::EndDisabled();
+        ImGui::SliderInt("Holes per sphere", &spheres.holeCount, 8, 32);
+        ImGui::SliderAngle("Hole radius", &spheres.holeAngle, 6.0F, 28.0F, "%.1f deg");
+        ImGui::SliderInt("Outer sphere points", &spheres.pointCount, 2000, 30000);
+        ImGui::SliderFloat("Point radius (700px)", &spheres.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::Combo("Visibility", &spheres.visibilityMode,
+                     "Surface occlusion\0Points only\0All transparent\0");
+        ImGui::BeginDisabled(spheres.visibilityMode != 2);
+        ImGui::SliderFloat("Point opacity", &spheres.pointOpacity, 0.05F, 1.0F, "%.2f");
+        ImGui::SliderInt("Depth sort layers", &spheres.depthSortLayers, 8, 96);
+        ImGui::EndDisabled();
+        ImGui::SliderFloat("Glow", &spheres.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &spheres.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &spheres.tilt, -35.0F, 35.0F);
+        if (ImGui::Button("Randomize directions")) {
+            spheres.directionSeed = spheres.directionSeed % 997 + 1;
         }
-    }
-    ImGui::SliderFloat("Radius variation", &braid.radiusVariation, 0.0F, 0.55F, "%.2f");
-    if (braid.geometryMode == 2) {
-        ImGui::SliderFloat("Whole-loop twist", &braid.wholeLoopTorsion, 0.0F, 1.5F, "%.2f");
-        ImGui::SliderFloat("Compression wave", &braid.torsionCompression, 0.0F, 1.2F, "%.2f");
-        ImGui::SliderFloat("Circulation", &braid.materialCirculation, -0.4F, 0.4F, "%.2f");
-    } else if (braid.geometryMode != 3) {
-        ImGui::SliderFloat("Unravel wave", &braid.releaseStrength, 0.0F, 0.95F, "%.2f");
-        ImGui::SliderFloat("Wave width", &braid.releaseWidth, 0.3F, 1.1F, "%.2f");
-    }
-    if (braid.geometryMode != 3) {
-        ImGui::SliderFloat("Wave travel", &braid.releaseSpeed, 0.3F, 2.0F, "%.2f");
-    }
-    ImGui::SliderInt("Points along", &braid.majorPointCount, 120, 720);
-    ImGui::SliderInt("Points around", &braid.minorPointCount, 16, 64);
-    // Even column counts close the staggered sampling pattern without a seam.
-    braid.minorPointCount += braid.minorPointCount % 2;
-    ImGui::SliderFloat("Point radius (700px)", &braid.pointSize, 0.6F, 3.0F, "%.2f");
-    ImGui::SliderFloat("Glow", &braid.glow, 0.0F, 1.5F, "%.2f");
-    ImGui::SliderFloat("Brightness", &braid.brightness, 0.5F, 2.0F, "%.2f");
-    ImGui::Checkbox("Color per tube", &state_.palette.enabled);
-    if (state_.palette.enabled) {
+        ImGui::SameLine();
+        if (ImGui::Button("Reset spheres")) {
+            spheres = NestedSphereSettings{};
+        }
+        ImGui::SeparatorText("Sphere palette");
         for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
             ImGui::PushID(static_cast<int>(i));
-            ImGui::Text("Tube %d", static_cast<int>(i + 1));
+            ImGui::Text("Color %d", static_cast<int>(i + 1));
             ImGui::SameLine();
-            ImGui::ColorEdit3("##Tube color", state_.palette.colors[i].data());
+            ImGui::ColorEdit3("##Sphere color", state_.palette.colors[i].data());
             ImGui::PopID();
         }
         if (ImGui::Button("Reset palette")) {
             state_.palette.colors = StrandPalette{}.colors;
         }
-        if (braid.strands < 5) {
-            ImGui::TextDisabled("Set Strands to 5 to use all five colors.");
+        if (spheres.sphereCount > static_cast<int>(state_.palette.colors.size())) {
+            ImGui::TextDisabled("The palette repeats after color 5.");
         }
-    }
-    ImGui::SliderAngle("Tilt", &braid.tilt, -35.0F, 35.0F);
-    if (ImGui::Button("Reset braid")) {
-        braid = BraidSettings{};
+    } else {
+        if (ImGui::Button("Orbital bloom preset")) {
+            braid = BraidSettings{};
+            braid.geometryMode = 3;
+            braid.majorRadius = 1.20F;
+            braid.weaveRadius = 0.25F;
+            braid.tubeRadius = 0.145F;
+            braid.twists = 2;
+            braid.radiusVariation = 0.25F;
+            braid.tilt = 0.28F;
+            braid.animationSpeed = 0.55F;
+        }
+        ImGui::Checkbox("Pause", &braid.paused);
+        ImGui::SameLine();
+        ImGui::Checkbox("Auto rotate", &braid.autoRotate);
+        ImGui::SliderFloat("Flow speed", &braid.animationSpeed, 0.0F, 2.0F, "%.2f");
+        ImGui::BeginDisabled(!braid.autoRotate);
+        ImGui::SliderFloat("Rotation speed", &braid.rotationSpeed, -0.5F, 0.5F, "%.2f");
+        ImGui::EndDisabled();
+        ImGui::SliderInt("Strands", &braid.strands, 2, 5);
+        ImGui::SliderInt("Twists", &braid.twists, 1, 6);
+        ImGui::SliderFloat("Ring radius", &braid.majorRadius, 0.9F, 1.5F, "%.2f");
+        if (braid.geometryMode != 3) {
+            ImGui::SliderFloat("Square shape", &braid.squareness, 2.0F, 6.0F, "%.2f");
+        }
+        ImGui::SliderFloat("Weave radius", &braid.weaveRadius, 0.15F, 0.52F, "%.2f");
+        ImGui::SliderFloat("Tube radius", &braid.tubeRadius, 0.12F, 0.32F, "%.3f");
+        if (braid.geometryMode != 0) {
+            ImGui::Checkbox("Limit tube overlap", &braid.limitTubeOverlap);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Caps thickness using strand spacing and twist.\n"
+                    "Off: Tube radius controls thickness directly; large tubes may overlap.");
+            }
+        }
+        ImGui::SliderFloat("Radius variation", &braid.radiusVariation, 0.0F, 0.55F, "%.2f");
+        if (braid.geometryMode == 2) {
+            ImGui::SliderFloat("Whole-loop twist", &braid.wholeLoopTorsion, 0.0F, 1.5F, "%.2f");
+            ImGui::SliderFloat("Compression wave", &braid.torsionCompression, 0.0F, 1.2F, "%.2f");
+            ImGui::SliderFloat("Circulation", &braid.materialCirculation, -0.4F, 0.4F, "%.2f");
+        } else if (braid.geometryMode != 3) {
+            ImGui::SliderFloat("Unravel wave", &braid.releaseStrength, 0.0F, 0.95F, "%.2f");
+            ImGui::SliderFloat("Wave width", &braid.releaseWidth, 0.3F, 1.1F, "%.2f");
+        }
+        if (braid.geometryMode != 3) {
+            ImGui::SliderFloat("Wave travel", &braid.releaseSpeed, 0.3F, 2.0F, "%.2f");
+        }
+        ImGui::SliderInt("Points along", &braid.majorPointCount, 120, 720);
+        ImGui::SliderInt("Points around", &braid.minorPointCount, 16, 64);
+        // Even column counts close the staggered sampling pattern without a seam.
+        braid.minorPointCount += braid.minorPointCount % 2;
+        ImGui::SliderFloat("Point radius (700px)", &braid.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &braid.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &braid.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::Checkbox("Color per tube", &state_.palette.enabled);
+        if (state_.palette.enabled) {
+            for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::Text("Tube %d", static_cast<int>(i + 1));
+                ImGui::SameLine();
+                ImGui::ColorEdit3("##Tube color", state_.palette.colors[i].data());
+                ImGui::PopID();
+            }
+            if (ImGui::Button("Reset palette")) {
+                state_.palette.colors = StrandPalette{}.colors;
+            }
+            if (braid.strands < 5) {
+                ImGui::TextDisabled("Set Strands to 5 to use all five colors.");
+            }
+        }
+        ImGui::SliderAngle("Tilt", &braid.tilt, -35.0F, 35.0F);
+        if (ImGui::Button("Reset braid")) {
+            braid = BraidSettings{};
+        }
     }
 
     ImGui::SeparatorText("Compute blur");

@@ -31,6 +31,7 @@ private:
     VkDescriptorSet depthSet_{};
     UniquePipelineLayout pipelineLayout_;
     UniquePipeline pipeline_;
+    UniquePipeline pointDepthPipeline_;
     UniquePipeline surfacePipeline_;
     ImageResource target_;
     ImageResource depth_;
@@ -39,6 +40,7 @@ private:
     VkImageLayout targetLayout_{VK_IMAGE_LAYOUT_UNDEFINED};
     float weaveTime_{};
     float rotationTime_{};
+    float nestedSphereTime_{};
 };
 
 } // namespace vkexp
