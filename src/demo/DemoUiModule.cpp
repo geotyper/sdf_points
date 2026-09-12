@@ -68,12 +68,6 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderAngle("Hole radius", &spheres.holeAngle, 6.0F, 28.0F, "%.1f deg");
         ImGui::SliderInt("Outer sphere points", &spheres.pointCount, 2000, 30000);
         ImGui::SliderFloat("Point radius (700px)", &spheres.pointSize, 0.6F, 3.0F, "%.2f");
-        ImGui::Combo("Visibility", &spheres.visibilityMode,
-                     "Surface occlusion\0Points only\0All transparent\0");
-        ImGui::BeginDisabled(spheres.visibilityMode != 2);
-        ImGui::SliderFloat("Point opacity", &spheres.pointOpacity, 0.05F, 1.0F, "%.2f");
-        ImGui::SliderInt("Depth sort layers", &spheres.depthSortLayers, 8, 96);
-        ImGui::EndDisabled();
         ImGui::SliderFloat("Glow", &spheres.glow, 0.0F, 1.5F, "%.2f");
         ImGui::SliderFloat("Brightness", &spheres.brightness, 0.5F, 2.0F, "%.2f");
         ImGui::SliderAngle("Tilt", &spheres.tilt, -35.0F, 35.0F);

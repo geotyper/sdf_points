@@ -61,11 +61,9 @@ struct BraidSettings {
 struct NestedSphereSettings {
     bool paused{};
     bool offsetCenters{};
-    int visibilityMode{1}; // 0: hidden surface, 1: point depth, 2: all transparent
     float animationSpeed{0.38F};
     float speedVariation{0.65F};
     float centerOffset{0.45F};
-    float pointOpacity{0.55F};
     float outerRadius{1.35F};
     float minimumRadiusRatio{0.10F};
     float radiusCurve{1.0F};
@@ -77,7 +75,6 @@ struct NestedSphereSettings {
     int sphereCount{6};
     int holeCount{12};
     int pointCount{12000};
-    int depthSortLayers{48};
     int directionSeed{1};
 };
 

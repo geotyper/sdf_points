@@ -36,8 +36,9 @@ void GraphicsModule::onAttach(AppContext& context) {
         throw std::runtime_error("No supported depth attachment format");
     }
 
-    const VkDescriptorSetLayoutBinding depthBinding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-                                                    VK_SHADER_STAGE_VERTEX_BIT, nullptr};
+    const VkDescriptorSetLayoutBinding depthBinding{
+        0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+        VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     VkDescriptorSetLayoutCreateInfo setInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     setInfo.bindingCount = 1;
     setInfo.pBindings = &depthBinding;
@@ -147,17 +148,13 @@ void GraphicsModule::onAttach(AppContext& context) {
                                   pipeline_.put(device)) != VK_SUCCESS) {
         throw std::runtime_error("Unable to create graphics pipeline");
     }
-    rendering.depthAttachmentFormat = depthFormat_;
-    depthState.depthTestEnable = VK_TRUE;
-    depthState.depthWriteEnable = VK_TRUE;
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
-                                  pointDepthPipeline_.put(device)) != VK_SUCCESS) {
-        throw std::runtime_error("Unable to create point depth pipeline");
-    }
     stages[0].module = surfaceVertex.get();
     stages[1].module = surfaceFragment.get();
     blendAttachment.colorWriteMask = 0;
     blendAttachment.blendEnable = VK_FALSE;
+    rendering.depthAttachmentFormat = depthFormat_;
+    depthState.depthTestEnable = VK_TRUE;
+    depthState.depthWriteEnable = VK_TRUE;
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
                                   surfacePipeline_.put(device)) != VK_SUCCESS) {
         throw std::runtime_error("Unable to create braid depth pipeline");
@@ -256,7 +253,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
     VkImageMemoryBarrier2 toDepth{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
     toDepth.srcStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
                            VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT |
-                           VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+                           VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     toDepth.srcAccessMask =
         depthLayout_ == VK_IMAGE_LAYOUT_UNDEFINED
             ? 0
@@ -307,11 +304,6 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         vkCmdSetViewport(commands, 0, 1, &viewport);
         vkCmdSetScissor(commands, 0, 1, &scissor);
         const auto& braid = state_.braid;
-        const bool pointDepthSpheres =
-            braid.geometryMode == 4 && state_.nestedSpheres.visibilityMode == 1;
-        const bool transparentSpheres =
-            braid.geometryMode == 4 && state_.nestedSpheres.visibilityMode == 2;
-        const bool spheresWithoutSurface = pointDepthSpheres || transparentSpheres;
         std::array<float, 28> pushConstants{};
         if (braid.geometryMode == 4) {
             const auto& spheres = state_.nestedSpheres;
@@ -325,7 +317,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 spheres.holeAngle,
                 static_cast<float>(spheres.holeCount),
                 static_cast<float>(spheres.pointCount),
-                spheres.pointOpacity,
+                1.0F,
                 spheres.pointSize,
                 static_cast<float>(spheres.sphereCount),
                 spheres.tilt,
@@ -337,9 +329,9 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 -1.0F,
                 4.0F,
                 spheres.speedVariation,
-                static_cast<float>(spheres.visibilityMode),
                 0.0F,
-                static_cast<float>(spheres.depthSortLayers),
+                0.0F,
+                0.0F,
                 static_cast<float>(spheres.directionSeed),
                 0.0F,
                 0.0F,
@@ -385,17 +377,14 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, surfacePipeline_);
         const auto objectCount = static_cast<std::uint32_t>(
             braid.geometryMode == 4 ? state_.nestedSpheres.sphereCount : braid.strands);
-        if (!spheresWithoutSurface) {
-            vkCmdDraw(commands, 720U * 64U * 6U, objectCount, 0, 0);
-        }
+        vkCmdDraw(commands, 720U * 64U * 6U, objectCount, 0, 0);
         vkCmdEndRendering(commands);
-        depthLayout_ = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
         VkImageMemoryBarrier2 sampleDepth{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         sampleDepth.srcStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
                                    VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         sampleDepth.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        sampleDepth.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+        sampleDepth.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
         sampleDepth.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
         sampleDepth.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         sampleDepth.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
@@ -410,73 +399,39 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         preserveColor.dstAccessMask =
             VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         preserveColor.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        if (!spheresWithoutSurface) {
-            const std::array sampleBarriers{sampleDepth, preserveColor};
-            dependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(sampleBarriers.size());
-            dependency.pImageMemoryBarriers = sampleBarriers.data();
-            vkCmdPipelineBarrier2(commands, &dependency);
-            depthLayout_ = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        } else if (pointDepthSpheres) {
-            sampleDepth.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
-                                       VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-            sampleDepth.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            sampleDepth.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-            const std::array pointBarriers{sampleDepth, preserveColor};
-            dependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(pointBarriers.size());
-            dependency.pImageMemoryBarriers = pointBarriers.data();
-            vkCmdPipelineBarrier2(commands, &dependency);
-        } else {
-            dependency.imageMemoryBarrierCount = 1;
-            dependency.pImageMemoryBarriers = &preserveColor;
-            vkCmdPipelineBarrier2(commands, &dependency);
-        }
+        const std::array sampleBarriers{sampleDepth, preserveColor};
+        dependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(sampleBarriers.size());
+        dependency.pImageMemoryBarriers = sampleBarriers.data();
+        vkCmdPipelineBarrier2(commands, &dependency);
+        depthLayout_ = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
         attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        rendering.pDepthAttachment = pointDepthSpheres ? &depthAttachment : nullptr;
+        rendering.pDepthAttachment = nullptr;
         vkCmdBeginRendering(commands, &rendering);
-        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          pointDepthSpheres ? pointDepthPipeline_.get() : pipeline_.get());
+        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
         vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
                                 &depthSet_, 0, nullptr);
         if (braid.geometryMode == 4) {
             const auto& spheres = state_.nestedSpheres;
-            const auto drawSphereLayer = [&](const std::uint32_t layer) {
-                const float layerValue = static_cast<float>(layer);
+            for (std::uint32_t sphere = 0; sphere < objectCount; ++sphere) {
+                const float sequence = static_cast<float>(sphere) /
+                                       static_cast<float>(std::max(spheres.sphereCount - 1, 1));
+                const float radiusRatio = 1.0F - (1.0F - spheres.minimumRadiusRatio) *
+                                                     std::pow(sequence, spheres.radiusCurve);
+                const auto spherePointCount = static_cast<std::uint32_t>(
+                    std::max(1L, std::lround(static_cast<float>(spheres.pointCount) * radiusRatio *
+                                             radiusRatio)));
+                const auto& tint = state_.palette.colors[sphere % state_.palette.colors.size()];
                 vkCmdPushConstants(commands, pipelineLayout_,
                                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                   22U * sizeof(float), sizeof(float), &layerValue);
-                for (std::uint32_t sphere = 0; sphere < objectCount; ++sphere) {
-                    const float sequence = static_cast<float>(sphere) /
-                                           static_cast<float>(std::max(spheres.sphereCount - 1, 1));
-                    const float radiusRatio = 1.0F - (1.0F - spheres.minimumRadiusRatio) *
-                                                         std::pow(sequence, spheres.radiusCurve);
-                    const auto spherePointCount = static_cast<std::uint32_t>(
-                        std::max(1L, std::lround(static_cast<float>(spheres.pointCount) *
-                                                 radiusRatio * radiusRatio)));
-                    const auto& tint = state_.palette.colors[sphere % state_.palette.colors.size()];
-                    vkCmdPushConstants(commands, pipelineLayout_,
-                                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                       16U * sizeof(float), 3U * sizeof(float), tint.data());
-                    const std::array sphereDraw{static_cast<float>(sphere),
-                                                static_cast<float>(spherePointCount)};
-                    vkCmdPushConstants(commands, pipelineLayout_,
-                                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                       25U * sizeof(float),
-                                       static_cast<std::uint32_t>(sizeof(sphereDraw)),
-                                       sphereDraw.data());
-                    vkCmdDraw(commands, 6, spherePointCount, 0, 0);
-                }
-            };
-            if (transparentSpheres) {
-                // Depth buckets are submitted from far to near so alpha blending
-                // composes the complete point cloud without a depth surface.
-                for (int layer = 0; layer < spheres.depthSortLayers; ++layer) {
-                    drawSphereLayer(static_cast<std::uint32_t>(layer));
-                }
-            } else {
-                drawSphereLayer(0);
+                                   16U * sizeof(float), 3U * sizeof(float), tint.data());
+                const std::array sphereDraw{static_cast<float>(sphere),
+                                            static_cast<float>(spherePointCount)};
+                vkCmdPushConstants(
+                    commands, pipelineLayout_,
+                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 25U * sizeof(float),
+                    static_cast<std::uint32_t>(sizeof(sphereDraw)), sphereDraw.data());
+                vkCmdDraw(commands, 6, spherePointCount, 0, 0);
             }
         } else if (state_.palette.enabled) {
             const auto pointsPerStrand =
@@ -525,7 +480,6 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
 void GraphicsModule::onDetach(AppContext&) {
     destroyRenderTarget();
     pipeline_.reset();
-    pointDepthPipeline_.reset();
     surfacePipeline_.reset();
     pipelineLayout_.reset();
     depthSet_ = VK_NULL_HANDLE;

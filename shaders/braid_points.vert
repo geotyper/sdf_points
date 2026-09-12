@@ -4,22 +4,7 @@
 
 layout(location = 0) out vec2 disc;
 layout(location = 1) flat out vec3 pointColor;
-layout(location = 2) flat out float pointVisibility;
-layout(set = 0, binding = 0) uniform sampler2D surfaceDepth;
-
-float depthAtCenter(vec2 ndc) {
-    // Manual bilinear interpolation: depth formats need not support linear
-    // filtering. Query exactly the anchor, never individual billboard pixels.
-    ivec2 size = textureSize(surfaceDepth, 0);
-    vec2 pixel = (ndc * 0.5 + 0.5) * vec2(size) - 0.5;
-    ivec2 base = ivec2(floor(pixel));
-    vec2 f = fract(pixel);
-    float a = texelFetch(surfaceDepth, clamp(base, ivec2(0), size - 1), 0).r;
-    float b = texelFetch(surfaceDepth, clamp(base + ivec2(1, 0), ivec2(0), size - 1), 0).r;
-    float c = texelFetch(surfaceDepth, clamp(base + ivec2(0, 1), ivec2(0), size - 1), 0).r;
-    float d = texelFetch(surfaceDepth, clamp(base + ivec2(1, 1), ivec2(0), size - 1), 0).r;
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
+layout(location = 2) flat out float pointFacing;
 
 const vec2 corners[6] = vec2[](vec2(-1, -1), vec2(1, -1), vec2(-1, 1),
                              vec2(-1, 1), vec2(1, -1), vec2(1, 1));
@@ -37,7 +22,7 @@ void main() {
         vec3 localDirection = vec3(radial * cos(angle), y, radial * sin(angle));
         if (insideSphereHole(localDirection)) {
             pointColor = vec3(0.0);
-            pointVisibility = 0.0;
+            pointFacing = 0.0;
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
             return;
         }
@@ -45,18 +30,6 @@ void main() {
         vec3 position = nestedSphereCenter(float(sphereIndex))
                       + nestedSphereRadius(float(sphereIndex))
                       * rotateSphereDirection(localDirection, float(sphereIndex));
-        if (pc.wave.y > 1.5) {
-            float layerCount = max(pc.wave.w, 1.0);
-            float normalizedDepth = clamp(0.5 + 0.5 * toView(position).z / nestedSphereSpan(),
-                                          0.0, 0.999999);
-            float pointLayer = floor(normalizedDepth * layerCount);
-            if (pointLayer != pc.wave.z) {
-                pointColor = vec3(0.0);
-                pointVisibility = 0.0;
-                gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-                return;
-            }
-        }
         vec3 normal = toView(rotateSphereDirection(localDirection, float(sphereIndex)));
         vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
         float diffuse = abs(dot(normal, light));
@@ -66,20 +39,10 @@ void main() {
         radiusPixels = max(radiusPixels, 0.30);
         vec3 tint = pc.style.x >= 0.0 ? pc.style.rgb : vec3(0.55, 0.72, 1.0);
         pointColor = tint * illumination * pc.look.z;
+        pointFacing = 1.0;
 
         vec4 clip = projectPoint(position);
-        if (pc.wave.y > 0.5) {
-            pointVisibility = 1.0;
-        } else {
-            float clearance = depthAtCenter(clip.xy) + 0.0004 - clip.z;
-            // The perforated depth skin selects whichever side is actually visible.
-            // Do not cull by normal direction: rear-facing points can be seen through holes.
-            pointVisibility = smoothstep(-0.00015, 0.00015, clearance);
-        }
         clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
-        if (pointVisibility <= 0.001) {
-            clip = vec4(2.0, 2.0, 2.0, 1.0);
-        }
         gl_Position = clip;
         disc *= (radiusPixels + 0.65) / radiusPixels;
         return;
@@ -109,15 +72,10 @@ void main() {
         tint = pc.style.rgb;
     }
     pointColor = tint * illumination * pc.look.z;
+    pointFacing = smoothstep(-0.015, 0.025, normal.z);
 
     vec4 clip = projectPoint(position);
-    float clearance = depthAtCenter(clip.xy) + 0.0004 - clip.z;
-    pointVisibility = smoothstep(-0.00015, 0.00015, clearance)
-                    * smoothstep(-0.015, 0.025, normal.z);
     clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
-    if (pointVisibility <= 0.001) {
-        clip = vec4(2.0, 2.0, 2.0, 1.0);
-    }
     gl_Position = clip;
     // Keep the antialias fringe one physical pixel wide at every viewport size.
     disc *= (radiusPixels + 0.65) / radiusPixels;

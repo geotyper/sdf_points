@@ -31,7 +31,6 @@ private:
     VkDescriptorSet depthSet_{};
     UniquePipelineLayout pipelineLayout_;
     UniquePipeline pipeline_;
-    UniquePipeline pointDepthPipeline_;
     UniquePipeline surfacePipeline_;
     ImageResource target_;
     ImageResource depth_;

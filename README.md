@@ -8,8 +8,8 @@ if they were attached to the underlying surface.
 
 The surface geometry also fills a depth-only pass, so points on rear or covered
 surfaces remain hidden, including through gaps between dots. Visibility is
-sampled at each point's centre before drawing its complete circular sprite;
-individual billboard pixels do not depth-test against the curved tube.
+sampled from that surface for every fragment of each circular sprite, allowing
+points to be clipped partially at silhouettes and opening boundaries.
 Directional lighting controls both point radius and brightness. Travelling
 phase, thickness, compression, and release waves produce the morphing motion.
 
@@ -62,12 +62,9 @@ at high values, partly beyond the outer shell.
 The depth-based visibility is two-sided, allowing rear-side points to appear through
 openings when they are not covered by another shell.
 
-**Visibility** offers three treatments. **Surface occlusion** uses the hidden solid
-shells. **Points only** removes those shells and lets the point sprites themselves
-write depth, exposing inner spheres through the gaps without showing every rear point.
-**All transparent** submits configurable depth buckets from far to near and shows the
-complete cloud; **Depth sort layers** trades performance for finer ordering, while
-**Point opacity** controls how strongly its nested layers accumulate.
+Point visibility is evaluated per fragment against the hidden perforated depth shell.
+At silhouettes and opening boundaries, only the covered part of a circular sprite is
+removed instead of making the entire point disappear when its center becomes hidden.
 
 **Color per tube** enables an editable five-color palette (coral, amber, mint,
 blue and violet). Each strand keeps its assigned color throughout deformation;
