@@ -26,10 +26,19 @@ private:
 
     DemoState& state_;
     ProfileMetricId metric_{invalidProfileMetric};
+    UniqueDescriptorSetLayout depthSetLayout_;
+    UniqueDescriptorPool depthPool_;
+    VkDescriptorSet depthSet_{};
     UniquePipelineLayout pipelineLayout_;
     UniquePipeline pipeline_;
+    UniquePipeline surfacePipeline_;
     ImageResource target_;
+    ImageResource depth_;
+    VkFormat depthFormat_{VK_FORMAT_UNDEFINED};
+    VkImageLayout depthLayout_{VK_IMAGE_LAYOUT_UNDEFINED};
     VkImageLayout targetLayout_{VK_IMAGE_LAYOUT_UNDEFINED};
+    float weaveTime_{};
+    float rotationTime_{};
 };
 
 } // namespace vkexp

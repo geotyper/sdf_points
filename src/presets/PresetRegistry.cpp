@@ -11,11 +11,11 @@ namespace vkexp {
 PresetRegistry::PresetRegistry()
     : presets_{
           Preset{"graphics", "Graphics pipeline", true, false,
-                 {0.015F, 0.025F, 0.06F, 1.0F}},
+                 {0.004F, 0.0003F, 0.004F, 1.0F}},
           Preset{"compute", "Compute dispatch", false, true,
                  {0.025F, 0.025F, 0.025F, 1.0F}},
           Preset{"mixed", "Graphics and compute pipelines together", true, true,
-                 {0.025F, 0.035F, 0.055F, 1.0F}},
+                 {0.004F, 0.0003F, 0.004F, 1.0F}},
       } {}
 
 void PresetRegistry::loadWindowPreset(const std::string_view path) {
@@ -68,4 +68,3 @@ const Preset& PresetRegistry::require(const std::string_view name) const {
 }
 
 } // namespace vkexp
-

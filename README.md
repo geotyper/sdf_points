@@ -1,10 +1,65 @@
-# vulkan_compute_boilerplate
+# SDF Points Morph
 
-A modular C++20 starting point for Vulkan compute experiments, using GLFW,
-GLM, and Dear ImGui for optional visualization. It builds on the
-`vulkan_boilerplate` template and adds reusable compute resources rather than
-application-specific simulation code. The stable compute baseline is tagged
-`v0.2.0`; current `main` develops the `0.3.0` API.
+SDF Points Morph is a real-time Vulkan visualization of procedural tube
+surfaces sampled into animated point clouds. The scene morphs between a plait,
+a twisted bundle, a torsion loop, and an orbital bloom while preserving stable
+material coordinates for every point. The points follow each deformation as
+if they were attached to the underlying surface.
+
+The surface geometry also fills a depth-only pass, so points on rear or covered
+surfaces remain hidden, including through gaps between dots. Visibility is
+sampled at each point's centre before drawing its complete circular sprite;
+individual billboard pixels do not depth-test against the curved tube.
+Directional lighting controls both point radius and brightness. Travelling
+phase, thickness, compression, and release waves produce the morphing motion.
+
+In **Controls / Point braid**, adjust **Twists**, **Weave radius**, **Tube radius**,
+**Radius variation**, sampling density and point size. **Pause** freezes the
+deformation; **Auto rotate** is off by default. Point radius is specified for a
+700-pixel viewport and scales with its shorter side. The default is 43,200 points.
+This version uses procedural geometry and instanced circular sprites, with no
+raymarching or surface-dot texture.
+
+**Geometry** switches between **Plait** (alternating over/under crossings) and
+**Twisted bundle** (strands rotate together in a circular cross-section without
+changing their order). The optional **Limit tube overlap** caps tube radii using
+strand spacing and pitch; it is off by default so **Tube radius** responds directly.
+With the limit off, large radii can intersect neighbouring strands. Both modes share the square
+loop, travelling release wave, and point settings. Curve tangents are analytic
+to keep lighting and visibility stable during long-running animations.
+
+A third option, **Torsion loop**, adds a different construction and motion based
+on the reference sequence: a circular bundle with distributed compression and
+thickness waves, material circulation along the guide, and a shared 3D torsion
+deformation of the rounded-square centrelines. Circular sections are swept in
+orthonormal frames after deformation, preserving their radius rather than stretching
+them into ellipses. Its opening and outer contour twist together. It does not use
+the old localized unravel envelope. **Whole-loop twist**,
+**Compression wave**, and **Circulation** control these motions independently;
+**Flow speed** sets their common clock and **Wave travel** sets compression speed.
+The point drawing and visibility path is shared with the original two modes.
+
+**Orbital bloom** is a fourth, five-petal rosette with orbiting strands, a
+travelling petal wave, breathing separation and a three-lobed depth undulation.
+Its points shade from blue-violet to pale mint. The **Orbital bloom preset**
+button applies a tuned combination of thickness, twist, tilt and speed; selecting
+the geometry alone keeps the current controls. Its sections remain circular and
+**Flow speed** controls the complete animation.
+
+**Color per tube** enables an editable five-color palette (coral, amber, mint,
+blue and violet). Each strand keeps its assigned color throughout deformation;
+lighting still controls brightness and point size. Set **Strands** to 5 to use
+all entries. Switching geometry presets preserves the palette; disabling it
+restores each mode's original tint. **Reset palette** restores the five colors.
+
+**Square shape** varies from a circle (2) to a rounded square (default 4).
+**Unravel wave**, **Wave width** and **Wave travel** control the local release;
+setting its strength to zero disables it. The pulse is periodic around the loop.
+
+The project is written in C++20 and uses Vulkan 1.3, GLFW, GLM, and Dear ImGui.
+It builds on the `vulkan_boilerplate` template and retains its reusable compute
+resources alongside the SDF point-morph renderer. The stable compute baseline
+is tagged `v0.2.0`; current `main` develops the `0.3.0` API.
 
 ## Version status
 
@@ -42,7 +97,7 @@ The build is split into reusable targets:
   staging/readback, barriers, dispatch helpers, and ping-pong resources;
 - `vkexp_profiling`: registered CPU/GPU timing metrics;
 - `vkexp_imgui`: the generic GLFW/Vulkan ImGui backend and profiler panel;
-- `vkexp_demo`: the triangle, compute blur, presets, and demo UI;
+- `vkexp_demo`: the point braid, compute blur, presets, and demo UI;
 - `vulkan_compute_boilerplate`: the composition root in `src/main.cpp`.
 
 `Application` does not select modules. A derived project creates them in its
@@ -53,7 +108,7 @@ experiment data lives in `DemoState`, outside the core lifecycle API.
 
 The scene renders into an off-screen texture shown in the ImGui **Viewport**
 window. The **Start** button dispatches a compute shader that applies a
-configurable box blur to the current triangle texture. The result remains in
+configurable box blur to the current braid texture. The result remains in
 the independent **Blur Output** window until the next dispatch.
 
 The separate `game_of_life.comp` shader and `vkexp_compute_smoke` executable

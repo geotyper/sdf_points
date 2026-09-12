@@ -114,6 +114,7 @@ struct ImageResourceConfig {
     VkImageUsageFlags usage{};
     VkMemoryPropertyFlags memoryProperties{VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
     VkFilter filter{VK_FILTER_LINEAR};
+    VkImageAspectFlags aspectMask{VK_IMAGE_ASPECT_COLOR_BIT};
 };
 
 class ImageResource {

@@ -45,8 +45,11 @@ set(SHADER_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
 set(SHADER_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
 
 set(SHADER_SOURCES
-    triangle.vert
-    triangle.frag
+    braid_points.vert
+    braid_points.frag
+    braid_surface.vert
+    braid_surface.frag
+    braid_geometry_probe.comp
     experiment.comp
     game_of_life.comp
 )
@@ -58,7 +61,7 @@ foreach(SHADER ${SHADER_SOURCES})
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_BINARY_DIR}
         COMMAND ${GLSLANG_VALIDATOR} -V ${SHADER_SOURCE_DIR}/${SHADER} -o ${SPIRV}
-        DEPENDS ${SHADER_SOURCE_DIR}/${SHADER}
+        DEPENDS ${SHADER_SOURCE_DIR}/${SHADER} ${SHADER_SOURCE_DIR}/braid_common.glsl
         COMMENT "Compiling ${SHADER}"
         VERBATIM
     )
