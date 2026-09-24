@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 namespace vkexp {
@@ -17,6 +18,8 @@ struct RenderViewport {
     VkExtent2D extent{960, 540};
     std::uint32_t requestedWidth{960};
     std::uint32_t requestedHeight{540};
+    // Set while capturing: the target is rendered at this size instead of the panel size.
+    std::optional<VkExtent2D> lockedExtent;
     std::uint64_t generation{};
 };
 

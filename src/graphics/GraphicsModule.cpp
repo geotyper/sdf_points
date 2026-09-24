@@ -168,7 +168,7 @@ void GraphicsModule::createRenderTarget(AppContext& context, const VkExtent2D ex
                        extent,
                        targetFormat,
                        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                           VK_IMAGE_USAGE_STORAGE_BIT,
+                           VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                    });
 
     depth_.create(context.vulkan.physicalDevice(), context.vulkan.device(),
@@ -217,9 +217,11 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             rotationTime_ += frame.deltaSeconds * state_.braid.rotationSpeed;
         }
     }
+    const VkExtent2D wanted = state_.viewport.lockedExtent.value_or(
+        VkExtent2D{state_.viewport.requestedWidth, state_.viewport.requestedHeight});
     const VkExtent2D requested{
-        std::clamp(state_.viewport.requestedWidth, 64U, 4096U),
-        std::clamp(state_.viewport.requestedHeight, 64U, 4096U),
+        std::clamp(wanted.width, 64U, 4096U),
+        std::clamp(wanted.height, 64U, 4096U),
     };
     if (requested.width == state_.viewport.extent.width &&
         requested.height == state_.viewport.extent.height) {

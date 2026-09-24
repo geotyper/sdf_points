@@ -122,6 +122,7 @@ target_link_libraries(vkexp_compute PUBLIC vkexp_core)
 vkexp_enable_warnings(vkexp_compute)
 
 add_library(vkexp_demo STATIC
+    src/capture/CaptureModule.cpp
     src/graphics/GraphicsModule.cpp
     src/compute/ComputeModule.cpp
     src/demo/DemoUiModule.cpp

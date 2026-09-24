@@ -189,7 +189,20 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         state_.viewport.requestedHeight = static_cast<std::uint32_t>(std::floor(available.y));
         const ImTextureID texture =
             static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(viewportDescriptor_));
-        ImGui::Image(texture, available);
+        if (state_.viewport.lockedExtent) {
+            // Capture renders at a fixed size; letterbox it instead of stretching.
+            const VkExtent2D locked = *state_.viewport.lockedExtent;
+            const float scale = std::min(available.x / static_cast<float>(locked.width),
+                                         available.y / static_cast<float>(locked.height));
+            const ImVec2 imageSize{static_cast<float>(locked.width) * scale,
+                                   static_cast<float>(locked.height) * scale};
+            const ImVec2 cursor = ImGui::GetCursorPos();
+            ImGui::SetCursorPos(ImVec2(cursor.x + (available.x - imageSize.x) * 0.5F,
+                                       cursor.y + (available.y - imageSize.y) * 0.5F));
+            ImGui::Image(texture, imageSize);
+        } else {
+            ImGui::Image(texture, available);
+        }
     }
     ImGui::End();
 

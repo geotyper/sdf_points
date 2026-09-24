@@ -1,3 +1,4 @@
+#include "vkexp/capture/CaptureModule.hpp"
 #include "vkexp/compute/ComputeModule.hpp"
 #include "vkexp/core/Application.hpp"
 #include "vkexp/demo/DemoState.hpp"
@@ -66,6 +67,8 @@ int main(const int argc, char** argv) {
         auto& imguiBackend = *imgui;
         app.addModule(std::make_unique<vkexp::GraphicsModule>(state, app.profiler()));
         app.addModule(std::make_unique<vkexp::ComputeModule>(state, app.profiler()));
+        // After Graphics/Compute (scene is final), before ImGui (never captured).
+        app.addModule(std::make_unique<vkexp::CaptureModule>(state, app.profiler()));
         app.addModule(std::move(imgui));
         app.addModule(std::make_unique<vkexp::DemoUiModule>(state, imguiBackend, app.profiler()));
         return app.run();
