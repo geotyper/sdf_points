@@ -531,13 +531,14 @@ void CaptureModule::drawPanel(const AppContext& context) {
         ImGui::EndCombo();
     }
     if (ImGui::BeginCombo("Codec", videoCodecName(options_.codec).data())) {
-        for (const VideoCodec codec : {VideoCodec::Hevc, VideoCodec::ProRes, VideoCodec::H264}) {
+        for (const VideoCodec codec : allVideoCodecs) {
             if (ImGui::Selectable(videoCodecName(codec).data(), codec == options_.codec)) {
                 options_.codec = codec;
             }
         }
         ImGui::EndCombo();
     }
+    ImGui::TextDisabled("%s", videoCodecDescription(options_.codec).data());
     ImGui::EndDisabled();
     const VkExtent2D output = phase_ == Phase::Idle ? captureExtent(context) : target_.extent();
     ImGui::Text("Output: %ux%u (%.3g:1) @ %u fps, %s", output.width, output.height,

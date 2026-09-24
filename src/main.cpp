@@ -24,7 +24,8 @@ void printHelp(const char* executable) {
               << "  --capture-size SIZE             framebuffer (default), viewport, viewport2x\n"
               << "                                  (Viewport panel size and proportions) or WxH\n"
               << "  --capture-fps N                 video frame rate and fixed step (default 60)\n"
-              << "  --capture-codec hevc|prores|h264\n"
+              << "  --capture-codec NAME            hevc (4:2:2 10-bit, macOS default), hevc420,\n"
+              << "                                  prores, prores4444 or h264 (Linux default)\n"
               << "  --capture-frames N              record N frames at startup, then exit\n"
               << "  --capture-loop N                record a seamless loop of N cycles, then exit\n"
               << "  --loop-driver wave|flow|rotation  what the N cycles count (default: wave,\n"
@@ -89,7 +90,7 @@ int main(const int argc, char** argv) {
                 const std::string_view value = requireValue(argc, argv, i);
                 const auto codec = vkexp::parseVideoCodec(value);
                 if (!codec) {
-                    throw std::runtime_error("--capture-codec expects hevc, prores or h264");
+                    throw std::runtime_error("--capture-codec expects hevc, hevc420, prores, prores4444 or h264");
                 }
                 captureOptions.codec = *codec;
             } else if (argument == "--capture-frames") {

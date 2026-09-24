@@ -2,6 +2,7 @@
 
 // Pure capture helpers (no Vulkan, no processes) so they can be unit tested.
 
+#include <array>
 #include <cstdint>
 #include <ctime>
 #include <filesystem>
@@ -12,11 +13,20 @@
 
 namespace vkexp {
 
+// The scene is made of 1-3 px coloured dots on black. 4:2:0 chroma (colour at
+// half resolution) averages each dot's colour with the black around it, which
+// visibly desaturates the video, so the default keeps more chroma.
 enum class VideoCodec {
-    Hevc,   // macOS: hevc_videotoolbox; elsewhere: libx265
-    ProRes, // prores_ks HQ in .mov, for editing
-    H264,   // libx264
+    Hevc,       // 4:2:2 10-bit; macOS: hevc_videotoolbox, elsewhere: libx265 4:4:4
+    Hevc420,    // 4:2:0 8-bit HEVC for phones and browsers
+    ProRes,     // prores_ks HQ 4:2:2 in .mov, for editing
+    ProRes4444, // prores_ks 4444 in .mov: full chroma, largest files
+    H264,       // libx264 4:2:0, plays everywhere
 };
+
+inline constexpr std::array allVideoCodecs{VideoCodec::Hevc, VideoCodec::Hevc420,
+                                           VideoCodec::ProRes, VideoCodec::ProRes4444,
+                                           VideoCodec::H264};
 
 enum class RawPixelFormat { Rgba, Bgra };
 
@@ -47,6 +57,8 @@ struct CaptureSize {
 
 [[nodiscard]] VideoCodec defaultVideoCodec();
 [[nodiscard]] std::string_view videoCodecName(VideoCodec codec);
+// One line for the UI: colour fidelity and where the file plays.
+[[nodiscard]] std::string_view videoCodecDescription(VideoCodec codec);
 [[nodiscard]] std::optional<VideoCodec> parseVideoCodec(std::string_view name);
 [[nodiscard]] std::string_view videoFileExtension(VideoCodec codec);
 [[nodiscard]] std::string_view ffmpegPixelFormat(RawPixelFormat format);

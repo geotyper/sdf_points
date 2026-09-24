@@ -54,16 +54,36 @@ std::string_view videoCodecName(const VideoCodec codec) {
     switch (codec) {
     case VideoCodec::Hevc:
         return "hevc";
+    case VideoCodec::Hevc420:
+        return "hevc420";
     case VideoCodec::ProRes:
         return "prores";
+    case VideoCodec::ProRes4444:
+        return "prores4444";
     case VideoCodec::H264:
         return "h264";
     }
     return "h264";
 }
 
+std::string_view videoCodecDescription(const VideoCodec codec) {
+    switch (codec) {
+    case VideoCodec::Hevc:
+        return "4:2:2 10-bit: compact, good colour; QuickTime / Macs";
+    case VideoCodec::Hevc420:
+        return "4:2:0: plays everywhere, fine dots lose colour";
+    case VideoCodec::ProRes:
+        return "ProRes HQ 4:2:2 for editing";
+    case VideoCodec::ProRes4444:
+        return "ProRes 4444: matches the screen, very large files";
+    case VideoCodec::H264:
+        return "4:2:0: plays everywhere, fine dots lose colour";
+    }
+    return "";
+}
+
 std::optional<VideoCodec> parseVideoCodec(const std::string_view name) {
-    for (const VideoCodec codec : {VideoCodec::Hevc, VideoCodec::ProRes, VideoCodec::H264}) {
+    for (const VideoCodec codec : allVideoCodecs) {
         if (name == videoCodecName(codec)) {
             return codec;
         }
@@ -72,7 +92,7 @@ std::optional<VideoCodec> parseVideoCodec(const std::string_view name) {
 }
 
 std::string_view videoFileExtension(const VideoCodec codec) {
-    return codec == VideoCodec::ProRes ? ".mov" : ".mp4";
+    return codec == VideoCodec::ProRes || codec == VideoCodec::ProRes4444 ? ".mov" : ".mp4";
 }
 
 std::string_view ffmpegPixelFormat(const RawPixelFormat format) {
@@ -105,8 +125,25 @@ std::vector<std::string> ffmpegArguments(const VideoEncodeSettings& settings) {
     // bitstream (-color_* options alone are dropped by VideoToolbox and ProRes).
     // Untagged or "bt709"-transfer video is decoded by macOS with a different
     // gamma than the screen uses, which looks washed out.
-    const std::string_view yuvFormat =
-        settings.codec == VideoCodec::ProRes ? "yuv422p10le" : "yuv420p";
+    std::string_view yuvFormat = "yuv420p";
+    switch (settings.codec) {
+    case VideoCodec::Hevc:
+#ifdef __APPLE__
+        yuvFormat = "p210le"; // VideoToolbox has no 4:4:4 HEVC; 4:2:2 10-bit is its best
+#else
+        yuvFormat = "yuv444p";
+#endif
+        break;
+    case VideoCodec::ProRes:
+        yuvFormat = "yuv422p10le";
+        break;
+    case VideoCodec::ProRes4444:
+        yuvFormat = "yuv444p10le";
+        break;
+    case VideoCodec::Hevc420:
+    case VideoCodec::H264:
+        break;
+    }
     arguments.emplace_back("-vf");
     arguments.push_back("scale=out_color_matrix=bt709:out_range=tv,format=" +
                         std::string{yuvFormat} +
@@ -115,20 +152,32 @@ std::vector<std::string> ffmpegArguments(const VideoEncodeSettings& settings) {
     switch (settings.codec) {
     case VideoCodec::Hevc:
 #ifdef __APPLE__
-        append({"-c:v", "hevc_videotoolbox", "-q:v", "65"});
+        append({"-c:v", "hevc_videotoolbox", "-profile:v", "main42210", "-q:v", "75"});
 #else
-        append({"-c:v", "libx265", "-crf", "18", "-preset", "slow"});
+        append({"-c:v", "libx265", "-crf", "16", "-preset", "slow"});
+#endif
+        append({"-tag:v", "hvc1"});
+        break;
+    case VideoCodec::Hevc420:
+#ifdef __APPLE__
+        // q65 blurred the dots noticeably; q80 roughly doubles the bitrate.
+        append({"-c:v", "hevc_videotoolbox", "-q:v", "80"});
+#else
+        append({"-c:v", "libx265", "-crf", "16", "-preset", "slow"});
 #endif
         append({"-tag:v", "hvc1"});
         break;
     case VideoCodec::ProRes:
         append({"-c:v", "prores_ks", "-profile:v", "3", "-vendor", "apl0"});
         break;
+    case VideoCodec::ProRes4444:
+        append({"-c:v", "prores_ks", "-profile:v", "4", "-vendor", "apl0"});
+        break;
     case VideoCodec::H264:
         append({"-c:v", "libx264", "-crf", "16", "-preset", "slow"});
         break;
     }
-    if (settings.codec != VideoCodec::ProRes) {
+    if (videoFileExtension(settings.codec) == ".mp4") {
         append({"-movflags", "+faststart"});
     }
     arguments.push_back(settings.output.string());

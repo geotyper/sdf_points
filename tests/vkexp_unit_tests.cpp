@@ -245,22 +245,43 @@ void testFfmpegArguments() {
     check(std::find(arguments.begin(), arguments.end(), "-movflags") == arguments.end(),
           "ProRes .mov without faststart");
 
+    settings.codec = vkexp::VideoCodec::ProRes4444;
+    arguments = vkexp::ffmpegArguments(settings);
+    check(contains(arguments, "-profile:v", "4") &&
+              contains(arguments, "-vf",
+                       "scale=out_color_matrix=bt709:out_range=tv,format=yuv444p10le" +
+                           std::string{tags}),
+          "ProRes 4444 keeps full chroma");
+    check(arguments.back() == "captures/out.mp4", "Output path is passed through");
+
     settings.codec = vkexp::VideoCodec::Hevc;
     arguments = vkexp::ffmpegArguments(settings);
     check(contains(arguments, "-tag:v", "hvc1"), "HEVC tagged hvc1");
 #ifdef __APPLE__
-    check(contains(arguments, "-c:v", "hevc_videotoolbox") && contains(arguments, "-q:v", "65"),
-          "HEVC VideoToolbox encoder");
+    check(contains(arguments, "-c:v", "hevc_videotoolbox") &&
+              contains(arguments, "-profile:v", "main42210") && contains(arguments, "-q:v", "75"),
+          "HEVC 4:2:2 VideoToolbox encoder");
+    check(contains(arguments, "-vf",
+                   "scale=out_color_matrix=bt709:out_range=tv,format=p210le" + std::string{tags}),
+          "HEVC 4:2:2 10-bit input");
     check(vkexp::defaultVideoCodec() == vkexp::VideoCodec::Hevc, "macOS default codec");
 #else
     check(contains(arguments, "-c:v", "libx265"), "HEVC software encoder");
+    check(contains(arguments, "-vf",
+                   "scale=out_color_matrix=bt709:out_range=tv,format=yuv444p" + std::string{tags}),
+          "HEVC 4:4:4 input");
     check(vkexp::defaultVideoCodec() == vkexp::VideoCodec::H264, "Linux default codec");
 #endif
+    settings.codec = vkexp::VideoCodec::Hevc420;
+    arguments = vkexp::ffmpegArguments(settings);
+    check(contains(arguments, "-vf",
+                   "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p" + std::string{tags}),
+          "Compatible HEVC stays 4:2:0");
 
     check(vkexp::videoFileExtension(vkexp::VideoCodec::ProRes) == ".mov", "ProRes extension");
+    check(vkexp::videoFileExtension(vkexp::VideoCodec::ProRes4444) == ".mov", "ProRes 4444 extension");
     check(vkexp::videoFileExtension(vkexp::VideoCodec::Hevc) == ".mp4", "HEVC extension");
-    for (const auto codec :
-         {vkexp::VideoCodec::Hevc, vkexp::VideoCodec::ProRes, vkexp::VideoCodec::H264}) {
+    for (const auto codec : vkexp::allVideoCodecs) {
         check(vkexp::parseVideoCodec(vkexp::videoCodecName(codec)) == codec, "Codec name round trip");
     }
     check(!vkexp::parseVideoCodec("vp9"), "Unknown codec rejection");
