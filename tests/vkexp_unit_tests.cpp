@@ -1,12 +1,21 @@
+#include "vkexp/capture/CaptureSettings.hpp"
+#include "vkexp/capture/CaptureWriter.hpp"
 #include "vkexp/compute/ComputeResources.hpp"
+#include "vkexp/core/FrameClock.hpp"
 #include "vkexp/presets/PresetRegistry.hpp"
 #include "vkexp/profiling/CpuProfiler.hpp"
 #include "vkexp/profiling/ProfilerTypes.hpp"
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -184,6 +193,216 @@ void testPingPongState() {
     check(buffers.readIndex() == 0 && buffers.writeIndex() == 1, "Restored ping-pong indices");
 }
 
+bool contains(const std::vector<std::string>& arguments, const std::string_view option,
+              const std::string_view value) {
+    const auto found = std::find(arguments.begin(), arguments.end(), option);
+    return found != arguments.end() && std::next(found) != arguments.end() &&
+           *std::next(found) == value;
+}
+
+std::filesystem::path makeTemporaryDirectory(const std::string_view name) {
+    const auto directory = std::filesystem::temp_directory_path() / std::string{name};
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    return directory;
+}
+
+void testFfmpegArguments() {
+    vkexp::VideoEncodeSettings settings;
+    settings.width = 1920;
+    settings.height = 1080;
+    settings.fps = 60;
+    settings.pixelFormat = vkexp::RawPixelFormat::Bgra;
+    settings.codec = vkexp::VideoCodec::H264;
+    settings.output = "captures/out.mp4";
+    auto arguments = vkexp::ffmpegArguments(settings);
+    check(contains(arguments, "-f", "rawvideo"), "ffmpeg raw input");
+    check(contains(arguments, "-pix_fmt", "bgra"), "ffmpeg input pixel format");
+    check(contains(arguments, "-video_size", "1920x1080"), "ffmpeg input size");
+    check(contains(arguments, "-framerate", "60"), "ffmpeg input rate");
+    check(contains(arguments, "-i", "-"), "ffmpeg reads stdin");
+    check(contains(arguments, "-c:v", "libx264"), "h264 encoder");
+    check(contains(arguments, "-crf", "16") && contains(arguments, "-preset", "slow"),
+          "h264 quality");
+    check(contains(arguments, "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p"),
+          "h264 BT.709 4:2:0 conversion");
+    check(arguments.back() == "captures/out.mp4", "ffmpeg output is last");
+
+    settings.pixelFormat = vkexp::RawPixelFormat::Rgba;
+    settings.codec = vkexp::VideoCodec::ProRes;
+    arguments = vkexp::ffmpegArguments(settings);
+    check(contains(arguments, "-pix_fmt", "rgba"), "ffmpeg RGBA input");
+    check(contains(arguments, "-c:v", "prores_ks") && contains(arguments, "-profile:v", "3"),
+          "ProRes HQ encoder");
+    check(contains(arguments, "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv422p10le"),
+          "ProRes 4:2:2 10-bit");
+    check(std::find(arguments.begin(), arguments.end(), "-movflags") == arguments.end(),
+          "ProRes .mov without faststart");
+
+    settings.codec = vkexp::VideoCodec::Hevc;
+    arguments = vkexp::ffmpegArguments(settings);
+    check(contains(arguments, "-tag:v", "hvc1"), "HEVC tagged hvc1");
+#ifdef __APPLE__
+    check(contains(arguments, "-c:v", "hevc_videotoolbox") && contains(arguments, "-q:v", "65"),
+          "HEVC VideoToolbox encoder");
+    check(vkexp::defaultVideoCodec() == vkexp::VideoCodec::Hevc, "macOS default codec");
+#else
+    check(contains(arguments, "-c:v", "libx265"), "HEVC software encoder");
+    check(vkexp::defaultVideoCodec() == vkexp::VideoCodec::H264, "Linux default codec");
+#endif
+
+    check(vkexp::videoFileExtension(vkexp::VideoCodec::ProRes) == ".mov", "ProRes extension");
+    check(vkexp::videoFileExtension(vkexp::VideoCodec::Hevc) == ".mp4", "HEVC extension");
+    for (const auto codec :
+         {vkexp::VideoCodec::Hevc, vkexp::VideoCodec::ProRes, vkexp::VideoCodec::H264}) {
+        check(vkexp::parseVideoCodec(vkexp::videoCodecName(codec)) == codec, "Codec name round trip");
+    }
+    check(!vkexp::parseVideoCodec("vp9"), "Unknown codec rejection");
+}
+
+void testShellCommand() {
+#ifndef _WIN32
+    check(vkexp::shellQuote("plain") == "'plain'", "Plain argument quoting");
+    check(vkexp::shellQuote("it's $HOME") == "'it'\\''s $HOME'", "Quote and expansion escaping");
+    check(vkexp::shellCommand("/opt/homebrew/bin/ffmpeg", {"-i", "-", "my file.mp4"}) ==
+              "'/opt/homebrew/bin/ffmpeg' '-i' '-' 'my file.mp4'",
+          "Shell command assembly");
+#endif
+}
+
+void testCaptureFileNames() {
+    std::tm time{};
+    time.tm_year = 2026 - 1900;
+    time.tm_mon = 8;
+    time.tm_mday = 24;
+    time.tm_hour = 7;
+    time.tm_min = 5;
+    time.tm_sec = 9;
+    check(vkexp::captureFileName(time, ".mp4") == "sdf_points_20260924_070509.mp4",
+          "Capture file name");
+
+    const auto directory = makeTemporaryDirectory("vkexp_capture_names");
+    const auto first = vkexp::uniqueCapturePath(directory, time, ".png");
+    check(first.filename() == "sdf_points_20260924_070509.png", "First capture path");
+    std::ofstream{first}.put('x');
+    const auto second = vkexp::uniqueCapturePath(directory, time, ".png");
+    check(second.filename() == "sdf_points_20260924_070509_2.png", "Capture path collision suffix");
+    std::filesystem::remove_all(directory);
+}
+
+void testCaptureResolutionParsing() {
+    const auto hd = vkexp::parseCaptureResolution("1920x1080");
+    check(hd && hd->width == 1920 && hd->height == 1080, "Parse 1920x1080");
+    const auto framebuffer = vkexp::parseCaptureResolution("framebuffer");
+    check(framebuffer && framebuffer->width == 0 && framebuffer->height == 0,
+          "Parse framebuffer resolution");
+    check(!vkexp::parseCaptureResolution("32x32"), "Reject too small resolution");
+    check(!vkexp::parseCaptureResolution("8192x4320"), "Reject too large resolution");
+    check(!vkexp::parseCaptureResolution("1920"), "Reject resolution without height");
+    check(!vkexp::parseCaptureResolution("1920x1080p"), "Reject trailing characters");
+}
+
+void testFindExecutable() {
+#ifndef _WIN32
+    const auto directory = makeTemporaryDirectory("vkexp_find_executable");
+    const auto tool = directory / "fake-ffmpeg";
+    std::ofstream{tool} << "#!/bin/sh\n";
+    check(!vkexp::findExecutable("fake-ffmpeg", "/nonexistent:" + directory.string()),
+          "Non-executable file is skipped");
+    std::filesystem::permissions(tool, std::filesystem::perms::owner_exec,
+                                 std::filesystem::perm_options::add);
+    const auto found = vkexp::findExecutable("fake-ffmpeg", "/nonexistent::" + directory.string());
+    check(found && *found == tool, "Executable found on search path");
+    std::filesystem::remove_all(directory);
+#endif
+}
+
+void testFrameClock() {
+    using namespace std::chrono_literals;
+    const vkexp::FrameClock::Clock::time_point start{};
+    vkexp::FrameClock clock;
+    clock.start(start);
+    auto tick = clock.tick(start + 16ms);
+    check(std::abs(tick.deltaSeconds - 0.016) < 1e-9, "Real frame delta");
+    check(std::abs(tick.realDeltaSeconds - 0.016) < 1e-9, "Real frame wall delta");
+
+    clock.setFixedStep(1.0 / 60.0);
+    tick = clock.tick(start + 116ms); // a slow 100 ms frame while recording
+    check(std::abs(tick.deltaSeconds - 1.0 / 60.0) < 1e-12, "Fixed frame delta");
+    check(std::abs(tick.realDeltaSeconds - 0.100) < 1e-9, "Fixed step keeps wall delta");
+    check(std::abs(tick.elapsedSeconds - (0.016 + 1.0 / 60.0)) < 1e-9, "Fixed step elapsed");
+    double elapsed = tick.elapsedSeconds;
+    for (int frame = 0; frame < 299; ++frame) {
+        elapsed = clock.tick(start + 116ms + (frame + 1) * 1ms).elapsedSeconds;
+    }
+    check(std::abs(elapsed - (0.016 + 300.0 / 60.0)) < 1e-9, "300 fixed frames are 5 seconds");
+
+    clock.clearFixedStep();
+    check(!clock.fixedStep(), "Fixed step cleared");
+    tick = clock.tick(start + 116ms + 299ms + 20ms);
+    check(std::abs(tick.deltaSeconds - 0.020) < 1e-9, "Real time resumes without a jump");
+
+    bool rejectedStep = false;
+    try {
+        clock.setFixedStep(0.0);
+    } catch (const std::exception&) {
+        rejectedStep = true;
+    }
+    check(rejectedStep, "Non-positive fixed step rejection");
+}
+
+void testCaptureWriter() {
+    const auto directory = makeTemporaryDirectory("vkexp_capture_writer");
+#ifndef _WIN32
+    {
+        // A shell pipe stands in for ffmpeg: frames must arrive complete and in order.
+        const auto raw = directory / "frames.raw";
+        vkexp::CaptureWriter writer{2};
+        std::string error;
+        check(writer.openVideo("cat > " + vkexp::shellQuote(raw.string()), raw, error),
+              "Writer opens pipe");
+        for (std::uint8_t frame = 0; frame < 5; ++frame) {
+            auto pixels = writer.acquireBuffer(16);
+            std::fill(pixels.begin(), pixels.end(), frame);
+            static_cast<void>(writer.pushVideoFrame(std::move(pixels)));
+        }
+        writer.closeVideo();
+        writer.shutdown();
+        const auto status = writer.status();
+        check(!status.failed && status.framesWritten == 5, "Writer wrote every frame");
+        check(status.lastFile == raw, "Writer reports the finished file");
+        std::ifstream input{raw, std::ios::binary};
+        const std::vector<char> bytes{std::istreambuf_iterator<char>{input}, {}};
+        check(bytes.size() == 80 && bytes.front() == 0 && bytes.back() == 4,
+              "Piped frames are complete and ordered");
+    }
+    {
+        vkexp::CaptureWriter writer{2};
+        std::string error;
+        check(writer.openVideo("exit 3", directory / "never.mp4", error), "Writer starts failing command");
+        static_cast<void>(writer.pushVideoFrame(writer.acquireBuffer(16)));
+        writer.closeVideo();
+        writer.shutdown();
+        check(writer.status().failed && !writer.status().error.empty(),
+              "Encoder failure is reported");
+    }
+#endif
+    {
+        const auto png = directory / "shot.png";
+        vkexp::CaptureWriter writer{1};
+        vkexp::CaptureWriter::Pixels pixels{0, 0, 255, 0, 255, 0, 0, 0}; // BGRA blue, red
+        static_cast<void>(writer.pushScreenshot(std::move(pixels), 2, 1,
+                                                vkexp::RawPixelFormat::Bgra, png));
+        writer.shutdown();
+        std::ifstream input{png, std::ios::binary};
+        char signature[8]{};
+        input.read(signature, sizeof(signature));
+        check(input && std::string_view(signature + 1, 3) == "PNG", "Screenshot PNG written");
+        check(writer.status().lastFile == png, "Screenshot reported as last file");
+    }
+    std::filesystem::remove_all(directory);
+}
+
 } // namespace
 
 int main() {
@@ -193,5 +412,12 @@ int main() {
     testDispatchSize();
     testComputeResourceValidation();
     testPingPongState();
+    testFfmpegArguments();
+    testShellCommand();
+    testCaptureFileNames();
+    testCaptureResolutionParsing();
+    testFindExecutable();
+    testFrameClock();
+    testCaptureWriter();
     return failures == 0 ? 0 : 1;
 }
