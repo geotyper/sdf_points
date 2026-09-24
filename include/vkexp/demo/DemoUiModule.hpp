@@ -10,7 +10,7 @@
 
 namespace vkexp {
 
-class DemoState;
+struct DemoState;
 class ImGuiModule;
 class Profiler;
 

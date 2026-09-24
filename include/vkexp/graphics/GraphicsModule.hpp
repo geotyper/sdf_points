@@ -6,7 +6,7 @@
 
 namespace vkexp {
 
-class DemoState;
+struct DemoState;
 class Profiler;
 
 class GraphicsModule final : public Module {
