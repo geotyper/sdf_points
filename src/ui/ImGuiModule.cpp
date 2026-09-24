@@ -8,10 +8,58 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+
 #include <array>
+#include <iostream>
 #include <stdexcept>
 
 namespace vkexp {
+namespace {
+
+// The GLFW backend reads modifiers with glfwGetKey(). On macOS GLFW derives that
+// state by toggling on flagsChanged events, so one missed event (Cmd+Tab, a system
+// shortcut, launching with Cmd+R) leaves Cmd "held". ImGui maps Cmd to KeyCtrl on
+// macOS, and with KeyCtrl set every slider click becomes a text field that
+// ignores typed characters. The callbacks' `mods` come from the event's own
+// modifier flags and are always current, so feed ImGui those instead.
+void addModifiers(GLFWwindow* window, const int mods) {
+    static bool reportedMismatch = false;
+    const bool glfwSuper = glfwGetKey(window, GLFW_KEY_LEFT_SUPER) == GLFW_PRESS ||
+                           glfwGetKey(window, GLFW_KEY_RIGHT_SUPER) == GLFW_PRESS;
+    const bool glfwControl = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                             glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+    if (!reportedMismatch && (glfwSuper != ((mods & GLFW_MOD_SUPER) != 0) ||
+                              glfwControl != ((mods & GLFW_MOD_CONTROL) != 0))) {
+        reportedMismatch = true;
+        std::cerr << "[input] GLFW key state disagrees with event modifiers (stuck "
+                  << (glfwSuper ? "Super/Cmd" : "Ctrl") << "); using event modifiers\n";
+    }
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddKeyEvent(ImGuiMod_Ctrl, (mods & GLFW_MOD_CONTROL) != 0);
+    io.AddKeyEvent(ImGuiMod_Shift, (mods & GLFW_MOD_SHIFT) != 0);
+    io.AddKeyEvent(ImGuiMod_Alt, (mods & GLFW_MOD_ALT) != 0);
+    io.AddKeyEvent(ImGuiMod_Super, (mods & GLFW_MOD_SUPER) != 0);
+}
+
+void mouseButtonCallback(GLFWwindow* window, const int button, const int action, const int mods) {
+    addModifiers(window, mods);
+    if (button >= 0 && button < ImGuiMouseButton_COUNT) {
+        ImGui::GetIO().AddMouseButtonEvent(button, action == GLFW_PRESS);
+    }
+}
+
+void keyCallback(GLFWwindow* window, const int key, const int scancode, const int action,
+                 const int mods) {
+    ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
+    if (action == GLFW_PRESS || action == GLFW_RELEASE) {
+        // Queued after the backend's glfwGetKey() snapshot, so this one wins.
+        addModifiers(window, mods);
+    }
+}
+
+} // namespace
 
 ImGuiModule::ImGuiModule(Profiler& profiler) : metric_(profiler.registerMetric("ImGui")) {}
 
@@ -48,6 +96,9 @@ void ImGuiModule::onAttach(AppContext& context) {
     if (!ImGui_ImplGlfw_InitForVulkan(context.window.handle(), true)) {
         throw std::runtime_error("Unable to initialize the ImGui GLFW backend");
     }
+    // Replaces two of the backend's callbacks; Shutdown restores the originals.
+    glfwSetMouseButtonCallback(context.window.handle(), mouseButtonCallback);
+    glfwSetKeyCallback(context.window.handle(), keyCallback);
 
     const VkFormat colorFormat = context.vulkan.colorFormat();
     VkPipelineRenderingCreateInfo renderingInfo{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
