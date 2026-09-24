@@ -99,13 +99,19 @@ std::vector<std::string> ffmpegArguments(const VideoEncodeSettings& settings) {
     const auto append = [&arguments](std::initializer_list<std::string_view> values) {
         arguments.insert(arguments.end(), values.begin(), values.end());
     };
-    // Frames are sRGB-encoded RGB; convert with BT.709 (not swscale's BT.601
-    // default) and tag the stream so players decode the same colours.
+    // Frames are sRGB-encoded RGB: convert with the BT.709 matrix (not swscale's
+    // BT.601 default) and tag BT.709 primaries with the sRGB transfer. setparams
+    // puts the tags on the frames, so every encoder writes them into its
+    // bitstream (-color_* options alone are dropped by VideoToolbox and ProRes).
+    // Untagged or "bt709"-transfer video is decoded by macOS with a different
+    // gamma than the screen uses, which looks washed out.
     const std::string_view yuvFormat =
         settings.codec == VideoCodec::ProRes ? "yuv422p10le" : "yuv420p";
     arguments.emplace_back("-vf");
     arguments.push_back("scale=out_color_matrix=bt709:out_range=tv,format=" +
-                        std::string{yuvFormat});
+                        std::string{yuvFormat} +
+                        ",setparams=color_primaries=bt709:color_trc=iec61966-2-1:"
+                        "colorspace=bt709:range=tv");
     switch (settings.codec) {
     case VideoCodec::Hevc:
 #ifdef __APPLE__
@@ -122,8 +128,6 @@ std::vector<std::string> ffmpegArguments(const VideoEncodeSettings& settings) {
         append({"-c:v", "libx264", "-crf", "16", "-preset", "slow"});
         break;
     }
-    append({"-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
-            "-color_range", "tv"});
     if (settings.codec != VideoCodec::ProRes) {
         append({"-movflags", "+faststart"});
     }

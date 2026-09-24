@@ -224,8 +224,11 @@ void testFfmpegArguments() {
     check(contains(arguments, "-c:v", "libx264"), "h264 encoder");
     check(contains(arguments, "-crf", "16") && contains(arguments, "-preset", "slow"),
           "h264 quality");
-    check(contains(arguments, "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p"),
-          "h264 BT.709 4:2:0 conversion");
+    constexpr std::string_view tags =
+        ",setparams=color_primaries=bt709:color_trc=iec61966-2-1:colorspace=bt709:range=tv";
+    check(contains(arguments, "-vf",
+                   "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p" + std::string{tags}),
+          "h264 BT.709 4:2:0 conversion with sRGB transfer tags");
     check(arguments.back() == "captures/out.mp4", "ffmpeg output is last");
 
     settings.pixelFormat = vkexp::RawPixelFormat::Rgba;
@@ -234,8 +237,10 @@ void testFfmpegArguments() {
     check(contains(arguments, "-pix_fmt", "rgba"), "ffmpeg RGBA input");
     check(contains(arguments, "-c:v", "prores_ks") && contains(arguments, "-profile:v", "3"),
           "ProRes HQ encoder");
-    check(contains(arguments, "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv422p10le"),
-          "ProRes 4:2:2 10-bit");
+    check(contains(arguments, "-vf",
+                   "scale=out_color_matrix=bt709:out_range=tv,format=yuv422p10le" +
+                       std::string{tags}),
+          "ProRes 4:2:2 10-bit with sRGB transfer tags");
     check(std::find(arguments.begin(), arguments.end(), "-movflags") == arguments.end(),
           "ProRes .mov without faststart");
 
