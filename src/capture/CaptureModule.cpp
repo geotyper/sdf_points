@@ -6,7 +6,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <initializer_list>
+#include <iostream>
 #include <stdexcept>
 #include <utility>
 
@@ -67,6 +69,31 @@ void pipelineBarrier(const VkCommandBuffer commands,
     vkCmdPipelineBarrier2(commands, &dependency);
 }
 
+// Prefer cached memory: CPU reads from uncached (write-combined) memory are slow.
+BufferResource createStagingBuffer(const VkPhysicalDevice physicalDevice, const VkDevice device,
+                                   const VkDeviceSize size) {
+    constexpr std::array preferences{
+        VkMemoryPropertyFlags{VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                              VK_MEMORY_PROPERTY_HOST_CACHED_BIT},
+        VkMemoryPropertyFlags{VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                              VK_MEMORY_PROPERTY_HOST_CACHED_BIT},
+        VkMemoryPropertyFlags{VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT},
+    };
+    for (const VkMemoryPropertyFlags properties : preferences) {
+        try {
+            BufferResource buffer;
+            buffer.create(physicalDevice, device,
+                          BufferResourceConfig{size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, properties});
+            return buffer;
+        } catch (const std::runtime_error&) {
+            // Try the next memory type preference.
+        }
+    }
+    throw std::runtime_error("No host-visible memory available for capture readback");
+}
+
 } // namespace
 
 CaptureModule::CaptureModule(DemoState& state, Profiler& profiler, CaptureOptions options)
@@ -87,15 +114,46 @@ VkExtent2D CaptureModule::captureExtent(const AppContext& context) const {
     return extent;
 }
 
-void CaptureModule::ensureTarget(AppContext& context, const VkExtent2D extent) {
+bool CaptureModule::anySlotBusy() const {
+    return std::any_of(ring_.begin(), ring_.end(),
+                       [](const StagingSlot& slot) { return slot.busy; });
+}
+
+void CaptureModule::ensureTargets(AppContext& context, const VkExtent2D extent) {
     if (target_ && target_.extent().width == extent.width &&
         target_.extent().height == extent.height) {
         return;
     }
-    target_.create(context.vulkan.physicalDevice(), context.vulkan.device(),
+    if (anySlotBusy()) {
+        throw std::logic_error("Capture targets cannot be resized while a readback is pending");
+    }
+    const VkDevice device = context.vulkan.device();
+    destroyTargets(device);
+    target_.create(context.vulkan.physicalDevice(), device,
                    ImageResourceConfig{extent, format_,
                                        VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    const VkDeviceSize frameBytes = VkDeviceSize{extent.width} * extent.height * 4U;
+    for (StagingSlot& slot : ring_) {
+        slot.buffer = createStagingBuffer(context.vulkan.physicalDevice(), device, frameBytes);
+        slot.coherent =
+            (slot.buffer.memoryProperties() & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0U;
+        if (vkMapMemory(device, slot.buffer.memory(), 0, VK_WHOLE_SIZE, 0, &slot.mapped) !=
+            VK_SUCCESS) {
+            throw std::runtime_error("Unable to map capture readback memory");
+        }
+    }
+    nextSlot_ = 0;
+}
+
+void CaptureModule::destroyTargets(const VkDevice device) {
+    for (StagingSlot& slot : ring_) {
+        if (slot.mapped != nullptr) {
+            vkUnmapMemory(device, slot.buffer.memory());
+        }
+        slot = StagingSlot{};
+    }
+    target_.reset();
 }
 
 void CaptureModule::onFrameBegin(AppContext& context, const FrameInfo&) {
@@ -105,7 +163,7 @@ void CaptureModule::onFrameBegin(AppContext& context, const FrameInfo&) {
     active_ = requestedActive_;
     if (active_) {
         const VkExtent2D extent = captureExtent(context);
-        ensureTarget(context, extent);
+        ensureTargets(context, extent);
         // Applied by GraphicsModule::onUpdate later in this frame.
         state_.viewport.lockedExtent = extent;
     } else {
@@ -114,17 +172,29 @@ void CaptureModule::onFrameBegin(AppContext& context, const FrameInfo&) {
 }
 
 void CaptureModule::onRender(AppContext& context, const FrameInfo&) {
+    auto cpuScope = context.profiler.cpu().scope(copyMetric_);
+    drainCompleted(context);
     if (!active_ || state_.viewport.image == VK_NULL_HANDLE ||
         state_.viewport.extent.width != target_.extent().width ||
         state_.viewport.extent.height != target_.extent().height) {
         return;
     }
-    auto cpuScope = context.profiler.cpu().scope(copyMetric_);
+
+    StagingSlot& slot = ring_[nextSlot_];
+    if (slot.busy) {
+        // Unreachable while fewer than stagingSlotCount frames are in flight.
+        std::cerr << "[capture] Readback ring exhausted; waiting for the GPU\n";
+        context.vulkan.waitIdle();
+        drainCompleted(context);
+    }
     auto gpuScope = context.profiler.gpu().scope(context.vulkan.commandBuffer(), copyMetric_);
-    recordBlit(context.vulkan.commandBuffer());
+    recordCopy(context.vulkan.commandBuffer(), slot);
+    slot.busy = true;
+    slot.serial = context.vulkan.frameSerial();
+    nextSlot_ = (nextSlot_ + 1) % ring_.size();
 }
 
-void CaptureModule::recordBlit(const VkCommandBuffer commands) {
+void CaptureModule::recordCopy(const VkCommandBuffer commands, StagingSlot& slot) {
     const VkImage scene = state_.viewport.image;
     // GraphicsModule and ComputeModule leave the scene sampled-readable for the
     // fragment stage (ImGui). Reads need only an execution dependency (WAR).
@@ -173,11 +243,68 @@ void CaptureModule::recordBlit(const VkCommandBuffer commands) {
                                      VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                                      VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT),
                     });
+
+    VkBufferImageCopy2 copyRegion{VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2};
+    copyRegion.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    copyRegion.imageExtent = {destination.width, destination.height, 1};
+    VkCopyImageToBufferInfo2 copy{VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2};
+    copy.srcImage = target_.image();
+    copy.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    copy.dstBuffer = slot.buffer.buffer();
+    copy.regionCount = 1;
+    copy.pRegions = &copyRegion;
+    vkCmdCopyImageToBuffer2(commands, &copy);
+
+    // Make the copy visible to host reads once the frame fence has signalled.
+    VkBufferMemoryBarrier2 toHost{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+    toHost.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+    toHost.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    toHost.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+    toHost.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+    toHost.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toHost.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toHost.buffer = slot.buffer.buffer();
+    toHost.size = VK_WHOLE_SIZE;
+    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependency.bufferMemoryBarrierCount = 1;
+    dependency.pBufferMemoryBarriers = &toHost;
+    vkCmdPipelineBarrier2(commands, &dependency);
 }
 
-void CaptureModule::onDetach(AppContext&) {
+void CaptureModule::drainCompleted(AppContext& context) {
+    const std::uint64_t completed = context.vulkan.completedFrameSerial();
+    // Consume in submission order so video frames stay ordered.
+    for (;;) {
+        StagingSlot* oldest = nullptr;
+        for (StagingSlot& slot : ring_) {
+            if (slot.busy && slot.serial <= completed &&
+                (oldest == nullptr || slot.serial < oldest->serial)) {
+                oldest = &slot;
+            }
+        }
+        if (oldest == nullptr) {
+            return;
+        }
+        consumeSlot(context, *oldest);
+        oldest->busy = false;
+    }
+}
+
+void CaptureModule::consumeSlot(AppContext& context, StagingSlot& slot) {
+    if (!slot.coherent) {
+        VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
+        range.memory = slot.buffer.memory();
+        range.size = VK_WHOLE_SIZE;
+        vkInvalidateMappedMemoryRanges(context.vulkan.device(), 1, &range);
+    }
+    ++framesRead_;
+}
+
+void CaptureModule::onDetach(AppContext& context) {
+    // Application waits for the device before detaching, so every slot is complete.
+    drainCompleted(context);
     state_.viewport.lockedExtent.reset();
-    target_.reset();
+    destroyTargets(context.vulkan.device());
 }
 
 } // namespace vkexp

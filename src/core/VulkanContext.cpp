@@ -434,6 +434,7 @@ bool VulkanContext::beginFrame(FrameSynchronizationTimings* timings) {
     frameTimings.fenceWaitMs +=
         std::chrono::duration<double, std::milli>(Clock::now() - started).count();
     check(frameFence, "vkWaitForFences");
+    completedSerial_ = std::max(completedSerial_, submittedSerials_[currentFrame_]);
     started = Clock::now();
     const VkResult acquired =
         vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailable_[currentFrame_],
@@ -456,6 +457,7 @@ bool VulkanContext::beginFrame(FrameSynchronizationTimings* timings) {
         check(imageFence, "vkWaitForFences(image)");
     }
     imagesInFlight_[currentImage_] = inFlight_[currentFrame_];
+    ++frameSerial_;
     check(vkResetFences(device_, 1, &inFlight_[currentFrame_]), "vkResetFences");
     check(vkResetCommandBuffer(commandBuffer(), 0), "vkResetCommandBuffer");
 
@@ -545,6 +547,8 @@ void VulkanContext::endFrame(FrameSynchronizationTimings* timings) {
     frameTimings.queueSubmitMs =
         std::chrono::duration<double, std::milli>(Clock::now() - started).count();
     check(submitted, "vkQueueSubmit2");
+    submittedSerials_[currentFrame_] = frameSerial_;
+    submittedSerial_ = frameSerial_;
 
     VkPresentInfoKHR presentInfo{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     presentInfo.waitSemaphoreCount = 1;
@@ -568,6 +572,7 @@ void VulkanContext::endFrame(FrameSynchronizationTimings* timings) {
 void VulkanContext::waitIdle() const {
     if (device_ != VK_NULL_HANDLE) {
         check(vkDeviceWaitIdle(device_), "vkDeviceWaitIdle");
+        completedSerial_ = submittedSerial_;
     }
 }
 

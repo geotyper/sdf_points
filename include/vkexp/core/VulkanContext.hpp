@@ -42,6 +42,11 @@ public:
         return static_cast<std::uint32_t>(swapchainImages_.size());
     }
     [[nodiscard]] VkCommandBuffer commandBuffer() const { return commandBuffers_[currentFrame_]; }
+    // Monotonic id (from 1) of the frame being recorded between beginFrame and endFrame.
+    [[nodiscard]] std::uint64_t frameSerial() const { return frameSerial_; }
+    // Every submitted frame with a serial <= this value has finished on the GPU.
+    // Advances when beginFrame waits the frame fence or after waitIdle; never blocks.
+    [[nodiscard]] std::uint64_t completedFrameSerial() const { return completedSerial_; }
 
 private:
     // The experiment images are shared by graphics, compute, and ImGui.
@@ -97,6 +102,10 @@ private:
     std::array<VkSemaphore, framesInFlight> imageAvailable_{};
     std::array<VkSemaphore, framesInFlight> renderFinished_{};
     std::array<VkFence, framesInFlight> inFlight_{};
+    std::array<std::uint64_t, framesInFlight> submittedSerials_{};
+    std::uint64_t frameSerial_{};
+    std::uint64_t submittedSerial_{};
+    mutable std::uint64_t completedSerial_{};
     std::uint32_t currentImage_{};
     std::size_t currentFrame_{};
     bool frameActive_{};
