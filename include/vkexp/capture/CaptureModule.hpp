@@ -20,7 +20,7 @@ struct DemoState;
 class Profiler;
 
 struct CaptureOptions {
-    CaptureResolution resolution{}; // {0, 0}: the window framebuffer size
+    CaptureSize size{};
     std::uint32_t fps{60};
     VideoCodec codec{defaultVideoCodec()};
     std::filesystem::path outputDirectory{"captures"};
@@ -82,6 +82,7 @@ private:
     void noteBackpressure(double waitedMs);
     void handleAutomation(AppContext& context);
     void drawPanel(const AppContext& context);
+    void drawSizeCombo(const AppContext& context);
 
     DemoState& state_;
     CaptureOptions options_;
@@ -100,6 +101,8 @@ private:
     std::uint64_t framesRecorded_{};
     std::uint64_t backpressureFrames_{};
     std::uint64_t screenshotsQueued_{};
+    CaptureResolution customResolution_{1920, 1080};
+    bool customSize_{};
     bool automationStarted_{};
     bool automationFailed_{};
     std::filesystem::path videoPath_;

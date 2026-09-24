@@ -1,5 +1,6 @@
 #include "vkexp/capture/CaptureSettings.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cstdlib>
 #include <system_error>
@@ -193,9 +194,26 @@ std::tm localTimeNow() {
     return local;
 }
 
-std::optional<CaptureResolution> parseCaptureResolution(const std::string_view text) {
+std::optional<CaptureSize> parseCaptureSize(const std::string_view text) {
+    CaptureSize size;
     if (text == "framebuffer") {
-        return CaptureResolution{};
+        return size;
+    }
+    if (text.substr(0, 8) == "viewport") {
+        size.mode = CaptureSize::Mode::Viewport;
+        const std::string_view scale = text.substr(8);
+        if (scale.empty()) {
+            return size;
+        }
+        if (scale.size() < 2 || scale.back() != 'x') {
+            return std::nullopt;
+        }
+        const auto factor = parseUnsigned(scale.substr(0, scale.size() - 1));
+        if (!factor || *factor < 1 || *factor > 4) {
+            return std::nullopt;
+        }
+        size.viewportScale = *factor;
+        return size;
     }
     const std::size_t separator = text.find('x');
     if (separator == std::string_view::npos) {
@@ -206,7 +224,33 @@ std::optional<CaptureResolution> parseCaptureResolution(const std::string_view t
     if (!width || !height || *width < 64 || *height < 64 || *width > 4096 || *height > 4096) {
         return std::nullopt;
     }
-    return CaptureResolution{*width, *height};
+    size.mode = CaptureSize::Mode::Fixed;
+    size.fixed = {*width, *height};
+    return size;
+}
+
+CaptureResolution resolveCaptureSize(const CaptureSize& size, const CaptureResolution framebuffer,
+                                     const CaptureResolution viewport) {
+    static constexpr std::uint64_t minimum = 64;
+    static constexpr std::uint64_t maximum = 4096;
+    std::uint64_t width = framebuffer.width;
+    std::uint64_t height = framebuffer.height;
+    if (size.mode == CaptureSize::Mode::Viewport) {
+        width = std::uint64_t{viewport.width} * size.viewportScale;
+        height = std::uint64_t{viewport.height} * size.viewportScale;
+    } else if (size.mode == CaptureSize::Mode::Fixed) {
+        width = size.fixed.width;
+        height = size.fixed.height;
+    }
+    const std::uint64_t longest = std::max(width, height);
+    if (longest > maximum) {
+        width = width * maximum / longest;
+        height = height * maximum / longest;
+    }
+    const auto finish = [](const std::uint64_t value) {
+        return static_cast<std::uint32_t>(std::clamp(value, minimum, maximum)) & ~1U;
+    };
+    return {finish(width), finish(height)};
 }
 
 std::optional<std::filesystem::path> findExecutable(const std::string_view name,

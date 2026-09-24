@@ -21,7 +21,8 @@ void printHelp(const char* executable) {
     std::cout << "Usage: " << executable << " [--preset NAME] [--no-validation] [capture options]\n"
               << "       " << executable << " --list-presets\n"
               << "\nCapture (F9 record/stop, F10 screenshot):\n"
-              << "  --capture-size WxH|framebuffer  capture resolution (default framebuffer)\n"
+              << "  --capture-size SIZE             framebuffer (default), viewport, viewport2x\n"
+              << "                                  (Viewport panel size and proportions) or WxH\n"
               << "  --capture-fps N                 video frame rate and fixed step (default 60)\n"
               << "  --capture-codec hevc|prores|h264\n"
               << "  --capture-frames N              record N frames at startup, then exit\n"
@@ -69,11 +70,12 @@ int main(const int argc, char** argv) {
                 validationEnabled = false;
             } else if (argument == "--capture-size") {
                 const std::string_view value = requireValue(argc, argv, i);
-                const auto resolution = vkexp::parseCaptureResolution(value);
-                if (!resolution) {
-                    throw std::runtime_error("--capture-size expects WxH (64..4096) or framebuffer");
+                const auto size = vkexp::parseCaptureSize(value);
+                if (!size) {
+                    throw std::runtime_error(
+                        "--capture-size expects framebuffer, viewport[Nx] or WxH (64..4096)");
                 }
-                captureOptions.resolution = *resolution;
+                captureOptions.size = *size;
             } else if (argument == "--capture-fps") {
                 const std::uint64_t fps = parseCount(argument, requireValue(argc, argv, i));
                 if (fps > 240) {

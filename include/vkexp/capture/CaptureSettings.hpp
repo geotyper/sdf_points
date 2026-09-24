@@ -34,6 +34,17 @@ struct CaptureResolution {
     std::uint32_t height{};
 };
 
+struct CaptureSize {
+    enum class Mode {
+        Framebuffer, // the window framebuffer
+        Viewport,    // the Viewport panel: its size and proportions, times viewportScale
+        Fixed,       // an explicit width x height
+    };
+    Mode mode{Mode::Framebuffer};
+    CaptureResolution fixed{};
+    std::uint32_t viewportScale{1};
+};
+
 [[nodiscard]] VideoCodec defaultVideoCodec();
 [[nodiscard]] std::string_view videoCodecName(VideoCodec codec);
 [[nodiscard]] std::optional<VideoCodec> parseVideoCodec(std::string_view name);
@@ -54,8 +65,13 @@ struct CaptureResolution {
                                                       std::string_view extension);
 [[nodiscard]] std::tm localTimeNow();
 
-// "1920x1080" -> {1920, 1080}; "framebuffer" -> {0, 0}.
-[[nodiscard]] std::optional<CaptureResolution> parseCaptureResolution(std::string_view text);
+// "framebuffer", "viewport", "viewport2x" (1x..4x) or "WxH" (64..4096).
+[[nodiscard]] std::optional<CaptureSize> parseCaptureSize(std::string_view text);
+// Final capture size: even (4:2:0 encoders), within 64..4096; oversized requests
+// shrink uniformly so the aspect ratio is kept.
+[[nodiscard]] CaptureResolution resolveCaptureSize(const CaptureSize& size,
+                                                   CaptureResolution framebuffer,
+                                                   CaptureResolution viewport);
 
 // Searches a PATH-style list ("a:b:c"; ';' on Windows).
 [[nodiscard]] std::optional<std::filesystem::path> findExecutable(std::string_view name,

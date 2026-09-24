@@ -290,16 +290,40 @@ void testCaptureFileNames() {
     std::filesystem::remove_all(directory);
 }
 
-void testCaptureResolutionParsing() {
-    const auto hd = vkexp::parseCaptureResolution("1920x1080");
-    check(hd && hd->width == 1920 && hd->height == 1080, "Parse 1920x1080");
-    const auto framebuffer = vkexp::parseCaptureResolution("framebuffer");
-    check(framebuffer && framebuffer->width == 0 && framebuffer->height == 0,
-          "Parse framebuffer resolution");
-    check(!vkexp::parseCaptureResolution("32x32"), "Reject too small resolution");
-    check(!vkexp::parseCaptureResolution("8192x4320"), "Reject too large resolution");
-    check(!vkexp::parseCaptureResolution("1920"), "Reject resolution without height");
-    check(!vkexp::parseCaptureResolution("1920x1080p"), "Reject trailing characters");
+void testCaptureSizes() {
+    using Mode = vkexp::CaptureSize::Mode;
+    const auto hd = vkexp::parseCaptureSize("1920x1080");
+    check(hd && hd->mode == Mode::Fixed && hd->fixed.width == 1920 && hd->fixed.height == 1080,
+          "Parse 1920x1080");
+    const auto framebuffer = vkexp::parseCaptureSize("framebuffer");
+    check(framebuffer && framebuffer->mode == Mode::Framebuffer, "Parse framebuffer size");
+    const auto viewport = vkexp::parseCaptureSize("viewport");
+    check(viewport && viewport->mode == Mode::Viewport && viewport->viewportScale == 1,
+          "Parse viewport size");
+    const auto viewport2x = vkexp::parseCaptureSize("viewport2x");
+    check(viewport2x && viewport2x->viewportScale == 2, "Parse viewport2x size");
+    check(!vkexp::parseCaptureSize("viewport5x"), "Reject viewport scale above 4");
+    check(!vkexp::parseCaptureSize("viewportx"), "Reject viewport scale without number");
+    check(!vkexp::parseCaptureSize("32x32"), "Reject too small resolution");
+    check(!vkexp::parseCaptureSize("8192x4320"), "Reject too large resolution");
+    check(!vkexp::parseCaptureSize("1920"), "Reject resolution without height");
+    check(!vkexp::parseCaptureSize("1920x1080p"), "Reject trailing characters");
+
+    const vkexp::CaptureResolution window{1570, 920};
+    const vkexp::CaptureResolution panel{1001, 641};
+    const auto resolve = [&](const vkexp::CaptureSize& size) {
+        return vkexp::resolveCaptureSize(size, window, panel);
+    };
+    auto size = resolve({});
+    check(size.width == 1570 && size.height == 920, "Framebuffer capture size");
+    size = resolve({Mode::Viewport, {}, 1});
+    check(size.width == 1000 && size.height == 640, "Viewport size rounded to even");
+    size = resolve({Mode::Viewport, {}, 2});
+    check(size.width == 2002 && size.height == 1282, "Viewport x2 size");
+    size = resolve({Mode::Fixed, {640, 640}, 1});
+    check(size.width == 640 && size.height == 640, "Square capture size");
+    size = vkexp::resolveCaptureSize({Mode::Viewport, {}, 4}, window, {2000, 1000});
+    check(size.width == 4096 && size.height == 2048, "Oversized viewport keeps aspect ratio");
 }
 
 void testFindExecutable() {
@@ -415,7 +439,7 @@ int main() {
     testFfmpegArguments();
     testShellCommand();
     testCaptureFileNames();
-    testCaptureResolutionParsing();
+    testCaptureSizes();
     testFindExecutable();
     testFrameClock();
     testCaptureWriter();

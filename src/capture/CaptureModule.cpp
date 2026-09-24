@@ -113,14 +113,12 @@ void CaptureModule::onAttach(AppContext& context) {
 }
 
 VkExtent2D CaptureModule::captureExtent(const AppContext& context) const {
-    VkExtent2D extent{options_.resolution.width, options_.resolution.height};
-    if (extent.width == 0 || extent.height == 0) {
-        extent = context.vulkan.extent();
-    }
-    // Matches the GraphicsModule target limits; even sizes keep 4:2:0 encoders happy.
-    extent.width = std::clamp(extent.width, 64U, 4096U) & ~1U;
-    extent.height = std::clamp(extent.height, 64U, 4096U) & ~1U;
-    return extent;
+    // Same 64..4096 limits as the GraphicsModule target.
+    const VkExtent2D framebuffer = context.vulkan.extent();
+    const CaptureResolution resolved = resolveCaptureSize(
+        options_.size, {framebuffer.width, framebuffer.height},
+        {state_.viewport.requestedWidth, state_.viewport.requestedHeight});
+    return {resolved.width, resolved.height};
 }
 
 bool CaptureModule::anySlotBusy() const {
@@ -173,9 +171,11 @@ RawPixelFormat CaptureModule::pixelFormat() const {
                : RawPixelFormat::Rgba;
 }
 
-void CaptureModule::onFrameBegin(AppContext& context, const FrameInfo&) {
+void CaptureModule::onFrameBegin(AppContext& context, const FrameInfo& frame) {
     context.profiler.cpu().addDuration(writeMetric_, writer_.takeWriteMilliseconds());
-    if (!automationStarted_ && (options_.exitAfterFrames > 0 || options_.exitAfterScreenshot)) {
+    // Wait until the UI has laid out once so the Viewport panel size is known.
+    if (!automationStarted_ && frame.frameNumber >= 2 &&
+        (options_.exitAfterFrames > 0 || options_.exitAfterScreenshot)) {
         automationStarted_ = true;
         toggleRequested_ = options_.exitAfterFrames > 0;
         screenshotRequested_ = options_.exitAfterScreenshot;
@@ -336,6 +336,78 @@ void CaptureModule::onUpdate(AppContext& context, const FrameInfo&) {
     drawPanel(context);
 }
 
+void CaptureModule::drawSizeCombo(const AppContext& context) {
+    const auto label = [&](const CaptureSize& size) {
+        const CaptureResolution framebuffer{context.vulkan.extent().width,
+                                            context.vulkan.extent().height};
+        const CaptureResolution viewport{state_.viewport.requestedWidth,
+                                         state_.viewport.requestedHeight};
+        const CaptureResolution resolved = resolveCaptureSize(size, framebuffer, viewport);
+        std::array<char, 48> text{};
+        switch (size.mode) {
+        case CaptureSize::Mode::Framebuffer:
+            std::snprintf(text.data(), text.size(), "Framebuffer (%ux%u)", resolved.width,
+                          resolved.height);
+            break;
+        case CaptureSize::Mode::Viewport:
+            std::snprintf(text.data(), text.size(), "Viewport x%u (%ux%u)", size.viewportScale,
+                          resolved.width, resolved.height);
+            break;
+        case CaptureSize::Mode::Fixed:
+            std::snprintf(text.data(), text.size(), "%ux%u", resolved.width, resolved.height);
+            break;
+        }
+        return text;
+    };
+    const auto fixed = [](const std::uint32_t width, const std::uint32_t height) {
+        return CaptureSize{CaptureSize::Mode::Fixed, {width, height}, 1};
+    };
+    const auto same = [](const CaptureSize& left, const CaptureSize& right) {
+        return left.mode == right.mode &&
+               (left.mode != CaptureSize::Mode::Fixed ||
+                (left.fixed.width == right.fixed.width && left.fixed.height == right.fixed.height)) &&
+               (left.mode != CaptureSize::Mode::Viewport ||
+                left.viewportScale == right.viewportScale);
+    };
+    const auto option = [&](const CaptureSize& size) {
+        if (ImGui::Selectable(label(size).data(), !customSize_ && same(size, options_.size))) {
+            options_.size = size;
+            customSize_ = false;
+        }
+    };
+
+    const auto preview = customSize_ ? std::array<char, 48>{"Custom"} : label(options_.size);
+    if (ImGui::BeginCombo("Resolution", preview.data())) {
+        option(CaptureSize{});
+        option(CaptureSize{CaptureSize::Mode::Viewport, {}, 1});
+        option(CaptureSize{CaptureSize::Mode::Viewport, {}, 2});
+        ImGui::SeparatorText("16:9");
+        option(fixed(1280, 720));
+        option(fixed(1920, 1080));
+        option(fixed(2560, 1440));
+        option(fixed(3840, 2160));
+        ImGui::SeparatorText("Square");
+        option(fixed(640, 640));
+        option(fixed(1080, 1080));
+        option(fixed(1280, 1280));
+        option(fixed(2048, 2048));
+        ImGui::Separator();
+        if (ImGui::Selectable("Custom", customSize_)) {
+            customSize_ = true;
+        }
+        ImGui::EndCombo();
+    }
+    if (customSize_) {
+        std::array<int, 2> custom{static_cast<int>(customResolution_.width),
+                                  static_cast<int>(customResolution_.height)};
+        if (ImGui::InputInt2("Width x height", custom.data())) {
+            customResolution_ = {static_cast<std::uint32_t>(std::clamp(custom[0], 64, 4096)),
+                                 static_cast<std::uint32_t>(std::clamp(custom[1], 64, 4096))};
+        }
+        options_.size = fixed(customResolution_.width, customResolution_.height);
+    }
+}
+
 void CaptureModule::drawPanel(const AppContext& context) {
     ImGui::SetNextWindowPos(ImVec2(20.0F, 650.0F), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350.0F, 320.0F), ImGuiCond_FirstUseEver);
@@ -364,28 +436,7 @@ void CaptureModule::drawPanel(const AppContext& context) {
 
     ImGui::SeparatorText("Settings");
     ImGui::BeginDisabled(phase_ != Phase::Idle);
-    constexpr std::array<CaptureResolution, 5> resolutions{{
-        {0, 0}, {1280, 720}, {1920, 1080}, {2560, 1440}, {3840, 2160}}};
-    const auto resolutionLabel = [](const CaptureResolution resolution) {
-        std::array<char, 32> label{};
-        if (resolution.width == 0) {
-            std::snprintf(label.data(), label.size(), "Framebuffer");
-        } else {
-            std::snprintf(label.data(), label.size(), "%ux%u", resolution.width,
-                          resolution.height);
-        }
-        return label;
-    };
-    if (ImGui::BeginCombo("Resolution", resolutionLabel(options_.resolution).data())) {
-        for (const CaptureResolution resolution : resolutions) {
-            const bool selected = resolution.width == options_.resolution.width &&
-                                  resolution.height == options_.resolution.height;
-            if (ImGui::Selectable(resolutionLabel(resolution).data(), selected)) {
-                options_.resolution = resolution;
-            }
-        }
-        ImGui::EndCombo();
-    }
+    drawSizeCombo(context);
     constexpr std::array<std::uint32_t, 5> rates{24, 30, 50, 60, 120};
     if (ImGui::BeginCombo("FPS", std::to_string(options_.fps).c_str())) {
         for (const std::uint32_t rate : rates) {
@@ -405,8 +456,9 @@ void CaptureModule::drawPanel(const AppContext& context) {
     }
     ImGui::EndDisabled();
     const VkExtent2D output = phase_ == Phase::Idle ? captureExtent(context) : target_.extent();
-    ImGui::Text("Output: %ux%u @ %u fps, %s", output.width, output.height, options_.fps,
-                videoFileExtension(options_.codec).data());
+    ImGui::Text("Output: %ux%u (%.3g:1) @ %u fps, %s", output.width, output.height,
+                static_cast<double>(output.width) / static_cast<double>(output.height),
+                options_.fps, videoFileExtension(options_.codec).data());
 
     ImGui::SeparatorText("Controls");
     ImGui::BeginDisabled(phase_ == Phase::Finishing);
