@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vkexp/demo/LoopPlan.hpp"
 #include "vkexp/presets/Preset.hpp"
 
 #include <vulkan/vulkan.h>
@@ -92,6 +93,20 @@ struct StrandPalette {
     }};
 };
 
+struct LoopSettings {
+    bool enabled{};
+    int cycles{1};
+    LoopDriver driver{LoopDriver::Wave};
+    // Set by CaptureModule while a loop is recorded: the animation then advances
+    // by exact per-frame steps, independent of frame time and the speed sliders.
+    struct Recording {
+        double phaseCycles{};
+        double phaseStep{};
+        double rotationStep{};
+    };
+    std::optional<Recording> recording;
+};
+
 struct DemoState {
     explicit DemoState(Preset selectedPreset) : preset(std::move(selectedPreset)) {
         braid.geometryMode = preset.initialGeometryMode;
@@ -104,6 +119,25 @@ struct DemoState {
     BraidSettings braid;
     NestedSphereSettings nestedSpheres;
     StrandPalette palette;
+    LoopSettings loop;
 };
+
+[[nodiscard]] inline LoopInputs loopInputs(const DemoState& state) {
+    LoopInputs inputs;
+    inputs.geometryMode = state.braid.geometryMode;
+    inputs.driver = state.loop.driver;
+    inputs.cycles = state.loop.cycles;
+    if (state.braid.geometryMode == 4) {
+        inputs.paused = state.nestedSpheres.paused;
+        inputs.animationSpeed = state.nestedSpheres.animationSpeed;
+    } else {
+        inputs.paused = state.braid.paused;
+        inputs.animationSpeed = state.braid.animationSpeed;
+        inputs.releaseSpeed = state.braid.releaseSpeed;
+        inputs.autoRotate = state.braid.autoRotate;
+        inputs.rotationSpeed = state.braid.rotationSpeed;
+    }
+    return inputs;
+}
 
 } // namespace vkexp

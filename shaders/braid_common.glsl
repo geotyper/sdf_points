@@ -7,6 +7,7 @@ layout(push_constant) uniform BraidPush {
     vec4 style;      // per-draw strand RGB (-1 = original tint), geometry mode
     vec4 wave;       // release strength, angular width, travel speed, squircle exponent
     vec4 motion;     // whole-loop torsion, travelling compression, circulation, optional radius limit
+    vec4 loop;       // x: loop length in 2*pi cycles of the flow phase (0 = free running)
 } pc;
 
 const float TAU = 6.28318530718;
@@ -15,6 +16,15 @@ const int SURFACE_ROWS = 720;
 const int SURFACE_COLUMNS = 64;
 const int MAX_SPHERE_HOLES = 32;
 const int MAX_NESTED_SPHERES = 12;
+
+// Phase of a motion running `frequency` times as fast as the flow phase. In a
+// loop capture every frequency is rounded to a whole number of cycles over the
+// loop, so all motions return to their start together and the clip is seamless.
+float timePhase(float frequency) {
+    float cycles = pc.loop.x;
+    float rounded = cycles > 0.0 ? round(frequency * cycles) / cycles : frequency;
+    return mod(pc.view.z * rounded, TAU);
+}
 
 bool nestedSphereMode() {
     return pc.style.w > 3.5;
@@ -92,7 +102,7 @@ vec3 rotateSphereDirection(vec3 localDirection, float sphere) {
     float randomSpeed = mix(0.55, 1.45, hashScalar(identity + 23.9));
     float speed = mix(1.0, randomSpeed, pc.wave.x);
     float direction = hashScalar(identity + 31.7) < 0.5 ? -1.0 : 1.0;
-    float angle = mod(pc.view.z * speed * direction, TAU);
+    float angle = timePhase(speed * direction);
     return rotateAroundAxis(localDirection, axis, angle);
 }
 
@@ -104,7 +114,7 @@ vec3 unrotateSphereDirection(vec3 direction, float sphere) {
     float randomSpeed = mix(0.55, 1.45, hashScalar(identity + 23.9));
     float speed = mix(1.0, randomSpeed, pc.wave.x);
     float rotationDirection = hashScalar(identity + 31.7) < 0.5 ? -1.0 : 1.0;
-    float angle = mod(pc.view.z * speed * rotationDirection, TAU);
+    float angle = timePhase(speed * rotationDirection);
     return rotateAroundAxis(direction, axis, -angle);
 }
 
@@ -116,7 +126,7 @@ vec3 nestedSpherePoint(float longitude, float latitudeParameter, float sphere) {
 
 float releaseEnvelope(float u) {
     // Smooth and periodic even as the wave crosses the material seam at 2*pi.
-    float delta = u - mod(pc.view.z * pc.wave.z, TAU);
+    float delta = u - timePhase(pc.wave.z);
     return exp((cos(delta) - 1.0) / (pc.wave.y * pc.wave.y));
 }
 
@@ -127,10 +137,10 @@ void curveFrame(float u, float strand, out vec3 position, out vec3 derivative,
     if (pc.style.w > 2.5) {
         // A five-petal travelling rosette with a separate three-lobed depth
         // wave. Circular strands orbit the guide like luminous filaments.
-        float petal = 5.0 * u - mod(0.4 * pc.view.z, TAU);
-        float fold = 3.0 * u + mod(0.65 * pc.view.z, TAU);
-        float orbit = pc.shape.w * u - mod(pc.view.z, TAU) + phase;
-        float breath = 1.0 + 0.12 * sin(mod(0.2 * pc.view.z, TAU));
+        float petal = 5.0 * u - timePhase(0.4);
+        float fold = 3.0 * u + timePhase(0.65);
+        float orbit = pc.shape.w * u - timePhase(1.0) + phase;
+        float breath = 1.0 + 0.12 * sin(timePhase(0.2));
         float separation = pc.shape.y * breath;
         float r = pc.shape.x * (1.0 + 0.18 * cos(petal)) + separation * cos(orbit);
         float dr = -0.90 * pc.shape.x * sin(petal) - separation * pc.shape.w * sin(orbit);
@@ -144,12 +154,12 @@ void curveFrame(float u, float strand, out vec3 position, out vec3 derivative,
         packingRadius = 0.78 * separation * sin(TAU * 0.5 / pc.points.w) * pitch;
         return;
     }
-    float delta = u - mod(pc.view.z * pc.wave.z, TAU);
+    float delta = u - timePhase(pc.wave.z);
     float release = torsionLoop ? 0.0 : pc.wave.x * releaseEnvelope(u);
     float releaseDerivative = -release * sin(delta) / (pc.wave.y * pc.wave.y);
     // Flatten the twist locally as the pulse passes; the periodic phase warp
     // preserves the total winding count and restores the braid behind it.
-    float braid = pc.shape.w * (u - release * sin(delta)) - mod(pc.view.z, TAU) + phase;
+    float braid = pc.shape.w * (u - release * sin(delta)) - timePhase(1.0) + phase;
     float braidDerivative = pc.shape.w *
         (1.0 - releaseDerivative * sin(delta) - release * cos(delta));
     // Distributed compression keeps the winding positive everywhere. It
@@ -201,14 +211,14 @@ void curveFrame(float u, float strand, out vec3 position, out vec3 derivative,
 
 float tubeRadius(float u, float strand) {
     float phase = TAU * strand / pc.points.w;
-    float wave = 0.76 * sin(2.0 * u - mod(0.65 * pc.view.z, TAU) + phase)
-               + 0.24 * sin(5.0 * u + mod(0.4 * pc.view.z, TAU) - phase);
+    float wave = 0.76 * sin(2.0 * u - timePhase(0.65) + phase)
+               + 0.24 * sin(5.0 * u + timePhase(0.4) - phase);
     if (pc.style.w > 2.5) {
         return pc.shape.z * (1.0 + pc.look.w * 0.65 *
-            sin(5.0 * u - mod(0.4 * pc.view.z, TAU) + phase));
+            sin(5.0 * u - timePhase(0.4) + phase));
     }
     if (pc.style.w > 1.5) {
-        float delta = u - mod(pc.view.z * pc.wave.z, TAU);
+        float delta = u - timePhase(pc.wave.z);
         float compression = pc.motion.y * (0.75 * cos(delta) + 0.25 * cos(2.0 * delta));
         return pc.shape.z * (1.0 + 0.55 * pc.look.w * wave) * (1.0 + 0.28 * compression);
     }
@@ -220,8 +230,8 @@ void deformCurveFrame(inout vec3 center, inout vec3 derivative, inout vec3 refer
     // Deform only the centreline and transport its frame with the analytic
     // Jacobian. Sweeping a NEW circle afterwards preserves a round section;
     // warping all surface vertices would stretch it into an ellipse.
-    float bendPhase = mod(pc.view.z * 0.4, TAU);
-    float twistPhase = mod(pc.view.z * 0.65, TAU);
+    float bendPhase = timePhase(0.4);
+    float twistPhase = timePhase(0.65);
     float bend = 0.10 * pc.motion.x / pc.shape.x * sin(bendPhase);
     derivative.z += 2.0 * bend * (center.x * derivative.x - center.y * derivative.y);
     reference.z += 2.0 * bend * (center.x * reference.x - center.y * reference.y);
@@ -245,7 +255,7 @@ void tubeFrame(float u, float strand, out vec3 center, out vec3 tangent,
     // Material coordinates remain permanent: advect the whole tube frame and
     // its attached points together along the rounded-square guide.
     if (torsionLoop) {
-        u += mod(pc.view.z * pc.motion.z, TAU);
+        u += timePhase(pc.motion.z);
     }
     vec3 derivative;
     float packingRadius;

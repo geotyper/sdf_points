@@ -40,6 +40,7 @@ private:
     float weaveTime_{};
     float rotationTime_{};
     float nestedSphereTime_{};
+    float loopCycles_{};
 };
 
 } // namespace vkexp

@@ -64,7 +64,7 @@ void GraphicsModule::onAttach(AppContext& context) {
     }
 
     constexpr VkPushConstantRange pushConstants{
-        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 28U * sizeof(float)};
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32U * sizeof(float)};
     VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     layoutInfo.setLayoutCount = 1;
     layoutInfo.pSetLayouts = &depthLayout;
@@ -207,14 +207,35 @@ void GraphicsModule::destroyRenderTarget() {
 
 void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
     auto cpuScope = context.profiler.cpu().scope(metric_);
-    if (state_.braid.geometryMode == 4) {
-        if (!state_.nestedSpheres.paused) {
-            nestedSphereTime_ += frame.deltaSeconds * state_.nestedSpheres.animationSpeed;
+    const auto& recording = state_.loop.recording;
+    loopCycles_ = 0.0F;
+    if (recording) {
+        // Exact steps: after the recorded frames the scene is back at its start.
+        loopCycles_ = static_cast<float>(recording->phaseCycles);
+        if (state_.braid.geometryMode == 4) {
+            nestedSphereTime_ += static_cast<float>(recording->phaseStep);
+        } else {
+            weaveTime_ += static_cast<float>(recording->phaseStep);
+            rotationTime_ += static_cast<float>(recording->rotationStep);
         }
-    } else if (!state_.braid.paused) {
-        weaveTime_ += frame.deltaSeconds * state_.braid.animationSpeed;
-        if (state_.braid.autoRotate) {
-            rotationTime_ += frame.deltaSeconds * state_.braid.rotationSpeed;
+    } else {
+        // Loop preview: the same rounded frequencies, advancing in real time.
+        const LoopPlan plan = state_.loop.enabled ? planLoop(loopInputs(state_)) : LoopPlan{};
+        if (plan.valid) {
+            loopCycles_ = static_cast<float>(plan.phaseCycles);
+        }
+        if (state_.braid.geometryMode == 4) {
+            if (!state_.nestedSpheres.paused) {
+                nestedSphereTime_ += frame.deltaSeconds * state_.nestedSpheres.animationSpeed;
+            }
+        } else if (!state_.braid.paused) {
+            const float phaseStep = frame.deltaSeconds * state_.braid.animationSpeed;
+            weaveTime_ += phaseStep;
+            if (state_.braid.autoRotate) {
+                rotationTime_ += plan.valid
+                                     ? phaseStep * static_cast<float>(plan.rotationPerPhase)
+                                     : frame.deltaSeconds * state_.braid.rotationSpeed;
+            }
         }
     }
     const VkExtent2D wanted = state_.viewport.lockedExtent.value_or(
@@ -306,7 +327,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         vkCmdSetViewport(commands, 0, 1, &viewport);
         vkCmdSetScissor(commands, 0, 1, &scissor);
         const auto& braid = state_.braid;
-        std::array<float, 28> pushConstants{};
+        std::array<float, 32> pushConstants{};
         if (braid.geometryMode == 4) {
             const auto& spheres = state_.nestedSpheres;
             pushConstants = {
@@ -338,6 +359,10 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 0.0F,
                 0.0F,
                 spheres.offsetCenters ? spheres.centerOffset : 0.0F,
+                loopCycles_,
+                0.0F,
+                0.0F,
+                0.0F,
             };
         } else {
             pushConstants = {
@@ -369,6 +394,10 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 braid.torsionCompression,
                 braid.materialCirculation,
                 braid.limitTubeOverlap ? 1.0F : 0.0F,
+                loopCycles_,
+                0.0F,
+                0.0F,
+                0.0F,
             };
         }
         vkCmdPushConstants(commands, pipelineLayout_,

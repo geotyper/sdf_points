@@ -146,6 +146,7 @@ add_library(vkexp_demo STATIC
     src/graphics/GraphicsModule.cpp
     src/compute/ComputeModule.cpp
     src/demo/DemoUiModule.cpp
+    src/demo/LoopPlan.cpp
     src/presets/PresetRegistry.cpp
 )
 add_dependencies(vkexp_demo vkexp_shaders)
