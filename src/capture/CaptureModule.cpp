@@ -1,5 +1,6 @@
 #include "vkexp/capture/CaptureModule.hpp"
 
+#include "vkexp/core/FrameClock.hpp"
 #include "vkexp/core/VulkanContext.hpp"
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/profiling/Profiler.hpp"
@@ -171,13 +172,13 @@ void CaptureModule::onFrameBegin(AppContext& context, const FrameInfo&) {
     if (phase_ == Phase::Recording) {
         if (const auto status = writer_.status(); status.failed) {
             error_ = status.error;
-            stopRecording();
+            stopRecording(context);
         }
     }
     if (toggleRequested_) {
         if (phase_ == Phase::Recording) {
             toggleRequested_ = false;
-            stopRecording();
+            stopRecording(context);
         } else if (phase_ == Phase::Idle && !anySlotBusy()) {
             // While Finishing, the request waits until the previous video is flushed.
             toggleRequested_ = false;
@@ -234,9 +235,12 @@ void CaptureModule::startRecording(AppContext& context) {
     phase_ = Phase::Recording;
     framesRecorded_ = 0;
     backpressureFrames_ = 0;
+    // Every later frame advances the animation by exactly one video frame.
+    context.clock.setFixedStep(1.0 / static_cast<double>(options_.fps));
 }
 
-void CaptureModule::stopRecording() {
+void CaptureModule::stopRecording(AppContext& context) {
+    context.clock.clearFixedStep();
     if (phase_ == Phase::Recording) {
         // The last frames are still in the readback ring; onFrameEnd closes the
         // pipe once they have been handed to the writer.
@@ -437,6 +441,7 @@ void CaptureModule::onDetach(AppContext& context) {
         writer_.closeVideo();
         phase_ = Phase::Idle;
     }
+    context.clock.clearFixedStep();
     writer_.shutdown(); // flushes the queue and waits for ffmpeg to finish the file
     state_.viewport.lockedExtent.reset();
     destroyTargets(context.vulkan.device());

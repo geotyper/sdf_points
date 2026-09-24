@@ -40,8 +40,12 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
     ImGui::Begin("Controls");
     ImGui::Text("Preset: %s", state_.preset.name.c_str());
     ImGui::Text("Frame: %llu", static_cast<unsigned long long>(frame.frameNumber));
-    ImGui::Text("%.2f ms (%.1f FPS)", frame.deltaSeconds * 1000.0F,
-                frame.deltaSeconds > 0.0F ? 1.0F / frame.deltaSeconds : 0.0F);
+    ImGui::Text("%.2f ms (%.1f FPS)", frame.realDeltaSeconds * 1000.0F,
+                frame.realDeltaSeconds > 0.0F ? 1.0F / frame.realDeltaSeconds : 0.0F);
+    if (frame.deltaSeconds != frame.realDeltaSeconds) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(sim step %.2f ms)", frame.deltaSeconds * 1000.0F);
+    }
     ImGui::Separator();
     ImGui::Checkbox("Graphics pipeline", &state_.preset.graphicsEnabled);
     ImGui::Checkbox("Compute pipeline", &state_.preset.computeEnabled);

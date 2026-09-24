@@ -68,7 +68,7 @@ private:
     void ensureTargets(AppContext& context, VkExtent2D extent);
     void destroyTargets(VkDevice device);
     void startRecording(AppContext& context);
-    void stopRecording();
+    void stopRecording(AppContext& context);
     void recordCopy(VkCommandBuffer commands, StagingSlot& slot);
     void drainCompleted(AppContext& context);
     void consumeSlot(AppContext& context, StagingSlot& slot);

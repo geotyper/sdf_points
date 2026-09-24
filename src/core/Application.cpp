@@ -11,7 +11,7 @@ namespace vkexp {
 Application::Application(ApplicationConfig config)
     : window_(config.windowWidth, config.windowHeight, config.title),
       vulkan_(window_, config.validationEnabled), profiler_(vulkan_),
-      context_{window_, vulkan_, profiler_} {}
+      context_{window_, vulkan_, profiler_, clock_} {}
 
 Module& Application::addModule(std::unique_ptr<Module> module) {
     if (running_) {
@@ -37,22 +37,20 @@ int Application::run() {
             ++attached;
         }
 
-        using Clock = std::chrono::steady_clock;
-        const auto started = Clock::now();
-        auto previous = started;
+        clock_.start(FrameClock::Clock::now());
         std::uint64_t frameNumber = 0;
         const double refreshRateHz = static_cast<double>(window_.refreshRateHz());
         while (!window_.shouldClose()) {
             profiler_.beginCpuFrame();
             FrameSynchronizationTimings synchronizationTimings{};
             window_.pollEvents();
-            const auto now = Clock::now();
+            const FrameClock::Tick tick = clock_.tick(FrameClock::Clock::now());
             FrameInfo frame{
-                std::chrono::duration<float>(now - previous).count(),
-                std::chrono::duration<float>(now - started).count(),
+                static_cast<float>(tick.deltaSeconds),
+                static_cast<float>(tick.elapsedSeconds),
                 frameNumber++,
+                static_cast<float>(tick.realDeltaSeconds),
             };
-            previous = now;
             for (auto& module : modules_) {
                 module->onFrameBegin(context_, frame);
             }

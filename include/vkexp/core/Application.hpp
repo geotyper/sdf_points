@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vkexp/core/FrameClock.hpp"
 #include "vkexp/core/Module.hpp"
 #include "vkexp/core/VulkanContext.hpp"
 #include "vkexp/core/Window.hpp"
@@ -31,6 +32,7 @@ private:
     Window window_;
     VulkanContext vulkan_;
     Profiler profiler_;
+    FrameClock clock_;
     AppContext context_;
     std::vector<std::unique_ptr<Module>> modules_;
     bool running_{};
