@@ -74,7 +74,6 @@ void VulkanContext::cleanup() {
         vkDeviceWaitIdle(device_);
         for (std::size_t i = 0; i < framesInFlight; ++i) {
             vkDestroyFence(device_, inFlight_[i], nullptr);
-            vkDestroySemaphore(device_, renderFinished_[i], nullptr);
             vkDestroySemaphore(device_, imageAvailable_[i], nullptr);
         }
         if (commandPool_ != VK_NULL_HANDLE) {
@@ -374,9 +373,19 @@ void VulkanContext::createSwapchain() {
         check(vkCreateImageView(device_, &viewInfo, nullptr, &swapchainImageViews_[i]),
               "vkCreateImageView");
     }
+
+    VkSemaphoreCreateInfo semaphoreInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    renderFinished_.assign(imageCount, VK_NULL_HANDLE);
+    for (VkSemaphore& semaphore : renderFinished_) {
+        check(vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &semaphore), "vkCreateSemaphore");
+    }
 }
 
 void VulkanContext::destroySwapchain() {
+    for (const VkSemaphore semaphore : renderFinished_) {
+        vkDestroySemaphore(device_, semaphore, nullptr);
+    }
+    renderFinished_.clear();
     for (const VkImageView view : swapchainImageViews_) {
         vkDestroyImageView(device_, view, nullptr);
     }
@@ -415,8 +424,6 @@ void VulkanContext::createSyncObjects() {
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     for (std::size_t i = 0; i < framesInFlight; ++i) {
         check(vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &imageAvailable_[i]),
-              "vkCreateSemaphore");
-        check(vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &renderFinished_[i]),
               "vkCreateSemaphore");
         check(vkCreateFence(device_, &fenceInfo, nullptr, &inFlight_[i]), "vkCreateFence");
     }
@@ -529,7 +536,7 @@ void VulkanContext::endFrame(FrameSynchronizationTimings* timings) {
     VkCommandBufferSubmitInfo commandInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
     commandInfo.commandBuffer = commandBuffer();
     VkSemaphoreSubmitInfo signalInfo{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-    signalInfo.semaphore = renderFinished_[currentFrame_];
+    signalInfo.semaphore = renderFinished_[currentImage_];
     signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
     VkSubmitInfo2 submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
     submitInfo.waitSemaphoreInfoCount = 1;
@@ -552,7 +559,7 @@ void VulkanContext::endFrame(FrameSynchronizationTimings* timings) {
 
     VkPresentInfoKHR presentInfo{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &renderFinished_[currentFrame_];
+    presentInfo.pWaitSemaphores = &renderFinished_[currentImage_];
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &swapchain_;
     presentInfo.pImageIndices = &currentImage_;

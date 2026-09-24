@@ -100,7 +100,9 @@ private:
     VkCommandPool commandPool_{};
     std::array<VkCommandBuffer, framesInFlight> commandBuffers_{};
     std::array<VkSemaphore, framesInFlight> imageAvailable_{};
-    std::array<VkSemaphore, framesInFlight> renderFinished_{};
+    // Per swapchain image: the presentation engine may still hold a frame's
+    // semaphore after its fence signalled, so it is reused only with its image.
+    std::vector<VkSemaphore> renderFinished_;
     std::array<VkFence, framesInFlight> inFlight_{};
     std::array<std::uint64_t, framesInFlight> submittedSerials_{};
     std::uint64_t frameSerial_{};
