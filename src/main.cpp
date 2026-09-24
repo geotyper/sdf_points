@@ -68,7 +68,10 @@ int main(const int argc, char** argv) {
         app.addModule(std::make_unique<vkexp::GraphicsModule>(state, app.profiler()));
         app.addModule(std::make_unique<vkexp::ComputeModule>(state, app.profiler()));
         // After Graphics/Compute (scene is final), before ImGui (never captured).
-        app.addModule(std::make_unique<vkexp::CaptureModule>(state, app.profiler()));
+        vkexp::CaptureOptions captureOptions;
+        captureOptions.outputDirectory = VKEXP_CAPTURE_DIR;
+        app.addModule(
+            std::make_unique<vkexp::CaptureModule>(state, app.profiler(), captureOptions));
         app.addModule(std::move(imgui));
         app.addModule(std::make_unique<vkexp::DemoUiModule>(state, imguiBackend, app.profiler()));
         return app.run();

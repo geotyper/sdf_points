@@ -29,6 +29,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(imgui)
 
+# Header-only PNG writer for screenshots (pinned commit; no CMake project inside).
+FetchContent_Declare(
+    stb
+    URL https://github.com/nothings/stb/archive/2c980bb59875b0d32144a71867fbdebb2f77cd20.tar.gz
+    URL_HASH SHA256=9a955b1b49a4410088a2e0ee2a9c057c3c907d0c1d75454144cb980aca0ba515
+)
+FetchContent_MakeAvailable(stb)
+
+find_package(Threads REQUIRED)
+
 add_library(imgui STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -121,6 +131,16 @@ target_include_directories(vkexp_compute PUBLIC include)
 target_link_libraries(vkexp_compute PUBLIC vkexp_core)
 vkexp_enable_warnings(vkexp_compute)
 
+add_library(vkexp_capture STATIC
+    src/capture/CaptureSettings.cpp
+    src/capture/CaptureWriter.cpp
+    src/capture/StbImageWrite.cpp
+)
+target_include_directories(vkexp_capture PUBLIC include)
+target_include_directories(vkexp_capture SYSTEM PRIVATE ${stb_SOURCE_DIR})
+target_link_libraries(vkexp_capture PUBLIC Threads::Threads)
+vkexp_enable_warnings(vkexp_capture)
+
 add_library(vkexp_demo STATIC
     src/capture/CaptureModule.cpp
     src/graphics/GraphicsModule.cpp
@@ -131,7 +151,7 @@ add_library(vkexp_demo STATIC
 add_dependencies(vkexp_demo vkexp_shaders)
 target_include_directories(vkexp_demo PUBLIC include)
 target_link_libraries(vkexp_demo
-    PUBLIC vkexp_compute vkexp_imgui glm::glm
+    PUBLIC vkexp_compute vkexp_imgui vkexp_capture glm::glm
     PRIVATE imgui
 )
 target_compile_definitions(vkexp_demo PRIVATE
@@ -143,6 +163,7 @@ add_executable(vulkan_compute_boilerplate src/main.cpp)
 target_link_libraries(vulkan_compute_boilerplate PRIVATE vkexp_demo)
 target_compile_definitions(vulkan_compute_boilerplate PRIVATE
     VKEXP_WINDOW_PRESET="${CMAKE_CURRENT_BINARY_DIR}/config/window.preset"
+    VKEXP_CAPTURE_DIR="${CMAKE_CURRENT_BINARY_DIR}/captures"
     $<$<AND:$<BOOL:${VKEXP_ENABLE_VALIDATION}>,$<CONFIG:Debug>>:VKEXP_ENABLE_VALIDATION>
 )
 vkexp_enable_warnings(vulkan_compute_boilerplate)
