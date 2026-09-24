@@ -35,8 +35,8 @@ void drawStatisticsTable(const char* label, const Backend& backend,
         if (statistics.sampleCount == 0) {
             continue;
         }
-        ImGui::TableSetColumnIndex(0);
         ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
         ImGui::TextUnformatted(metricNames[index].c_str());
         const std::array values{
             statistics.currentMs, statistics.averageMs,      statistics.minimumMs,
