@@ -2,6 +2,7 @@
 #include "vkexp/capture/CaptureWriter.hpp"
 #include "vkexp/compute/ComputeResources.hpp"
 #include "vkexp/core/FrameClock.hpp"
+#include "vkexp/demo/LoopPlan.hpp"
 #include "vkexp/presets/PresetRegistry.hpp"
 #include "vkexp/profiling/CpuProfiler.hpp"
 #include "vkexp/profiling/ProfilerTypes.hpp"
@@ -432,6 +433,70 @@ void testCaptureWriter() {
     std::filesystem::remove_all(directory);
 }
 
+void testLoopPlan() {
+    constexpr double tau = 6.28318530717958647692;
+    const auto near = [](const double left, const double right) {
+        return std::abs(left - right) < 1e-9;
+    };
+    vkexp::LoopInputs inputs;
+    inputs.geometryMode = 0;
+    inputs.driver = vkexp::LoopDriver::Wave;
+    inputs.cycles = 1;
+    inputs.animationSpeed = 0.42;
+    inputs.releaseSpeed = 1.15;
+    auto plan = vkexp::planLoop(inputs);
+    check(plan.valid, "Wave loop is valid");
+    check(near(plan.phaseCycles, 1.0 / 1.15), "One wave lap in flow cycles");
+    check(near(plan.durationSeconds, tau / 1.15 / 0.42), "Wave loop duration");
+    check(near(plan.phaseCycles * 1.15, 1.0), "Wave completes a whole lap");
+    check(vkexp::loopFrameCount(plan, 60.0) == 781, "Wave loop frame count at 60 fps");
+
+    inputs.driver = vkexp::LoopDriver::Flow;
+    inputs.cycles = 2;
+    plan = vkexp::planLoop(inputs);
+    check(plan.valid && near(plan.phaseCycles, 2.0), "Two flow cycles");
+
+    // Auto rotation is rounded to whole turns over the loop.
+    inputs.autoRotate = true;
+    inputs.rotationSpeed = 0.05;
+    inputs.driver = vkexp::LoopDriver::Wave;
+    inputs.cycles = 3;
+    plan = vkexp::planLoop(inputs);
+    const double turns = plan.rotationPerPhase * plan.phaseCycles;
+    check(plan.valid && near(turns, std::round(turns)), "Rotation rounded to whole turns");
+
+    inputs.driver = vkexp::LoopDriver::Rotation;
+    inputs.cycles = 1;
+    plan = vkexp::planLoop(inputs);
+    check(plan.valid && near(plan.durationSeconds, tau / 0.05), "One object rotation lasts 2pi/speed");
+    check(near(plan.rotationPerPhase * plan.phasePeriod, tau), "Rotation loop turns exactly once");
+    inputs.rotationSpeed = -0.05;
+    plan = vkexp::planLoop(inputs);
+    check(plan.valid && near(plan.rotationPerPhase * plan.phasePeriod, -tau),
+          "Reverse rotation loop turns exactly once backwards");
+
+    inputs.autoRotate = false;
+    check(!vkexp::planLoop(inputs).valid, "Rotation loop needs auto rotate");
+    inputs.driver = vkexp::LoopDriver::Wave;
+    inputs.geometryMode = 3;
+    check(!vkexp::planLoop(inputs).valid, "Orbital bloom has no wave loop");
+    check(vkexp::defaultLoopDriver(3) == vkexp::LoopDriver::Flow, "Orbital bloom loops its orbit");
+    check(vkexp::loopDriverLabel(4, vkexp::LoopDriver::Flow) == "Sphere turns", "Sphere loop label");
+
+    inputs.geometryMode = 0;
+    inputs.paused = true;
+    check(!vkexp::planLoop(inputs).valid, "Paused animation cannot loop");
+    inputs.paused = false;
+    inputs.animationSpeed = 0.0;
+    check(!vkexp::planLoop(inputs).valid, "Zero speed cannot loop");
+    inputs.animationSpeed = 0.01;
+    inputs.cycles = 8;
+    plan = vkexp::planLoop(inputs);
+    check(!plan.valid && !plan.problem.empty(), "Overlong loop rejected");
+    plan.durationSeconds = 0.001;
+    check(vkexp::loopFrameCount(plan, 60.0) == 2, "Loop has at least two frames");
+}
+
 } // namespace
 
 int main() {
@@ -448,5 +513,6 @@ int main() {
     testFindExecutable();
     testFrameClock();
     testCaptureWriter();
+    testLoopPlan();
     return failures == 0 ? 0 : 1;
 }
