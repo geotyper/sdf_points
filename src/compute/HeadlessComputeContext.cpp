@@ -1,5 +1,7 @@
 #include "vkexp/compute/HeadlessComputeContext.hpp"
 
+#include "vkexp/core/Portability.hpp"
+
 #include <optional>
 #include <vector>
 
@@ -42,6 +44,10 @@ HeadlessComputeContext::HeadlessComputeContext(const HeadlessComputeConfig& conf
         application.apiVersion = config.apiVersion;
         VkInstanceCreateInfo instanceInfo{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
         instanceInfo.pApplicationInfo = &application;
+        std::vector<const char*> instanceExtensions;
+        portability::enableInstancePortability(instanceExtensions, instanceInfo.flags);
+        instanceInfo.enabledExtensionCount = static_cast<std::uint32_t>(instanceExtensions.size());
+        instanceInfo.ppEnabledExtensionNames = instanceExtensions.data();
         if (vkCreateInstance(&instanceInfo, nullptr, &instance_) != VK_SUCCESS) {
             throw HeadlessComputeUnavailable("Vulkan 1.3 instance is unavailable");
         }
@@ -94,6 +100,10 @@ HeadlessComputeContext::HeadlessComputeContext(const HeadlessComputeConfig& conf
         deviceInfo.pNext = &features;
         deviceInfo.queueCreateInfoCount = 1;
         deviceInfo.pQueueCreateInfos = &queueInfo;
+        std::vector<const char*> deviceExtensions;
+        portability::enableDevicePortability(physicalDevice_, deviceExtensions);
+        deviceInfo.enabledExtensionCount = static_cast<std::uint32_t>(deviceExtensions.size());
+        deviceInfo.ppEnabledExtensionNames = deviceExtensions.data();
         if (vkCreateDevice(physicalDevice_, &deviceInfo, nullptr, &device_) != VK_SUCCESS) {
             throw HeadlessComputeUnavailable("Unable to create the Vulkan compute device");
         }

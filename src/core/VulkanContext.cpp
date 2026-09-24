@@ -1,5 +1,6 @@
 #include "vkexp/core/VulkanContext.hpp"
 
+#include "vkexp/core/Portability.hpp"
 #include "vkexp/core/Window.hpp"
 
 #define GLFW_INCLUDE_NONE
@@ -117,6 +118,7 @@ void VulkanContext::createInstance(const bool enableValidation) {
     }
 
     VkInstanceCreateInfo createInfo{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+    portability::enableInstancePortability(extensions, createInfo.flags);
     createInfo.pApplicationInfo = &appInfo;
     createInfo.enabledExtensionCount = static_cast<std::uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
@@ -283,8 +285,11 @@ void VulkanContext::createDevice() {
     createInfo.pNext = &vulkan13;
     createInfo.queueCreateInfoCount = static_cast<std::uint32_t>(queueInfos.size());
     createInfo.pQueueCreateInfos = queueInfos.data();
-    createInfo.enabledExtensionCount = static_cast<std::uint32_t>(deviceExtensions.size());
-    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+    std::vector<const char*> enabledDeviceExtensions(deviceExtensions.begin(),
+                                                     deviceExtensions.end());
+    portability::enableDevicePortability(physicalDevice_, enabledDeviceExtensions);
+    createInfo.enabledExtensionCount = static_cast<std::uint32_t>(enabledDeviceExtensions.size());
+    createInfo.ppEnabledExtensionNames = enabledDeviceExtensions.data();
     check(vkCreateDevice(physicalDevice_, &createInfo, nullptr, &device_), "vkCreateDevice");
     vkGetDeviceQueue(device_, graphicsQueueFamily_, 0, &graphicsQueue_);
     vkGetDeviceQueue(device_, presentQueueFamily_, 0, &presentQueue_);
