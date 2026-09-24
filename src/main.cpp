@@ -26,6 +26,9 @@ void printHelp(const char* executable) {
               << "  --capture-fps N                 video frame rate and fixed step (default 60)\n"
               << "  --capture-codec hevc|prores|h264\n"
               << "  --capture-frames N              record N frames at startup, then exit\n"
+              << "  --capture-loop N                record a seamless loop of N cycles, then exit\n"
+              << "  --loop-driver wave|flow|rotation  what the N cycles count (default: wave,\n"
+              << "                                  or flow for orbital bloom / nested spheres)\n"
               << "  --screenshot                    save one PNG at startup, then exit\n";
 }
 
@@ -91,6 +94,23 @@ int main(const int argc, char** argv) {
                 captureOptions.codec = *codec;
             } else if (argument == "--capture-frames") {
                 captureOptions.exitAfterFrames = parseCount(argument, requireValue(argc, argv, i));
+            } else if (argument == "--capture-loop") {
+                const std::uint64_t cycles = parseCount(argument, requireValue(argc, argv, i));
+                if (cycles > 64) {
+                    throw std::runtime_error("--capture-loop must be between 1 and 64");
+                }
+                captureOptions.exitAfterLoopCycles = static_cast<int>(cycles);
+            } else if (argument == "--loop-driver") {
+                const std::string_view value = requireValue(argc, argv, i);
+                if (value == "wave") {
+                    captureOptions.loopDriver = vkexp::LoopDriver::Wave;
+                } else if (value == "flow") {
+                    captureOptions.loopDriver = vkexp::LoopDriver::Flow;
+                } else if (value == "rotation") {
+                    captureOptions.loopDriver = vkexp::LoopDriver::Rotation;
+                } else {
+                    throw std::runtime_error("--loop-driver expects wave, flow or rotation");
+                }
             } else if (argument == "--screenshot") {
                 captureOptions.exitAfterScreenshot = true;
             } else if (argument == "--list-presets") {

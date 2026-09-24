@@ -4,6 +4,7 @@
 #include "vkexp/capture/CaptureWriter.hpp"
 #include "vkexp/core/Module.hpp"
 #include "vkexp/core/VulkanResource.hpp"
+#include "vkexp/demo/LoopPlan.hpp"
 #include "vkexp/profiling/ProfilerTypes.hpp"
 
 #include <vulkan/vulkan.h>
@@ -12,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 namespace vkexp {
@@ -29,6 +31,9 @@ struct CaptureOptions {
     std::uint64_t exitAfterFrames{};
     // Command-line automation: take one screenshot at startup, then quit.
     bool exitAfterScreenshot{};
+    // Command-line automation: record a seamless loop of this many cycles, then quit.
+    int exitAfterLoopCycles{};
+    std::optional<LoopDriver> loopDriver;
 };
 
 // Copies the scene render target (never the ImGui swapchain image) into a
@@ -48,6 +53,8 @@ public:
     // Requests take effect at the start of the next frame.
     void toggleRecording() { toggleRequested_ = true; }
     void requestScreenshot() { screenshotRequested_ = true; }
+    // Records exactly one seamless loop as configured in DemoState::loop.
+    void requestLoopRecording() { loopRequested_ = true; }
     [[nodiscard]] bool recording() const { return phase_ == Phase::Recording; }
     // True when a command-line capture could not produce its file.
     [[nodiscard]] bool automationFailed() const { return automationFailed_; }
@@ -83,6 +90,8 @@ private:
     void handleAutomation(AppContext& context);
     void drawPanel(const AppContext& context);
     void drawSizeCombo(const AppContext& context);
+    void drawLoopSection();
+    void startLoopRecording(AppContext& context);
 
     DemoState& state_;
     CaptureOptions options_;
@@ -98,6 +107,8 @@ private:
     bool toggleRequested_{};
     bool screenshotRequested_{};
     bool screenshotPending_{};
+    bool loopRequested_{};
+    std::uint64_t recordLimit_{}; // stop automatically after this many frames (0 = never)
     std::uint64_t framesRecorded_{};
     std::uint64_t backpressureFrames_{};
     std::uint64_t screenshotsQueued_{};

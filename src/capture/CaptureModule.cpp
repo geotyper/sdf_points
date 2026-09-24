@@ -180,6 +180,19 @@ void CaptureModule::onFrameBegin(AppContext& context, const FrameInfo& frame) {
         toggleRequested_ = options_.exitAfterFrames > 0;
         screenshotRequested_ = options_.exitAfterScreenshot;
     }
+    if (!automationStarted_ && frame.frameNumber >= 2 && options_.exitAfterLoopCycles > 0) {
+        automationStarted_ = true;
+        state_.loop.enabled = true;
+        state_.loop.cycles = options_.exitAfterLoopCycles;
+        state_.loop.driver =
+            options_.loopDriver.value_or(defaultLoopDriver(state_.braid.geometryMode));
+        loopRequested_ = true;
+        screenshotRequested_ = options_.exitAfterScreenshot;
+    }
+    if (loopRequested_ && phase_ == Phase::Idle && !anySlotBusy()) {
+        loopRequested_ = false;
+        startLoopRecording(context);
+    }
     if (phase_ == Phase::Recording) {
         if (const auto status = writer_.status(); status.failed) {
             error_ = status.error;
@@ -246,12 +259,37 @@ void CaptureModule::startRecording(AppContext& context) {
     phase_ = Phase::Recording;
     framesRecorded_ = 0;
     backpressureFrames_ = 0;
+    recordLimit_ = options_.exitAfterFrames;
     // Every later frame advances the animation by exactly one video frame.
     context.clock.setFixedStep(1.0 / static_cast<double>(options_.fps));
 }
 
+void CaptureModule::startLoopRecording(AppContext& context) {
+    const LoopPlan plan = planLoop(loopInputs(state_));
+    if (!plan.valid) {
+        error_ = "Loop: " + plan.problem;
+        std::cerr << "[capture] " << error_ << '\n';
+        return;
+    }
+    startRecording(context);
+    if (phase_ != Phase::Recording) {
+        return;
+    }
+    const std::uint64_t frames = loopFrameCount(plan, options_.fps);
+    const double phaseStep = plan.phasePeriod / static_cast<double>(frames);
+    state_.loop.enabled = true;
+    state_.loop.recording =
+        LoopSettings::Recording{plan.phaseCycles, phaseStep, phaseStep * plan.rotationPerPhase};
+    recordLimit_ = frames;
+    std::cout << "[capture] Loop: " << state_.loop.cycles << " x "
+              << loopDriverLabel(state_.braid.geometryMode, state_.loop.driver) << ", " << frames
+              << " frames (" << plan.durationSeconds << " s)\n";
+}
+
 void CaptureModule::stopRecording(AppContext& context) {
     context.clock.clearFixedStep();
+    state_.loop.recording.reset();
+    recordLimit_ = 0;
     if (phase_ == Phase::Recording) {
         // The last frames are still in the readback ring; onFrameEnd closes the
         // pipe once they have been handed to the writer.
@@ -291,6 +329,9 @@ void CaptureModule::onRender(AppContext& context, const FrameInfo&) {
 }
 
 void CaptureModule::onFrameEnd(AppContext& context, const FrameInfo&) {
+    if (phase_ == Phase::Recording && recordLimit_ > 0 && framesRecorded_ >= recordLimit_) {
+        stopRecording(context);
+    }
     const bool videoInFlight = std::any_of(ring_.begin(), ring_.end(), [](const StagingSlot& slot) {
         return slot.busy && slot.video;
     });
@@ -307,12 +348,9 @@ void CaptureModule::handleAutomation(AppContext& context) {
     if (!automationStarted_) {
         return;
     }
-    if (phase_ == Phase::Recording && options_.exitAfterFrames > 0 &&
-        framesRecorded_ >= options_.exitAfterFrames) {
-        stopRecording(context);
-    }
+    const bool recordsVideo = options_.exitAfterFrames > 0 || options_.exitAfterLoopCycles > 0;
     const bool videoDone =
-        options_.exitAfterFrames == 0 || (phase_ == Phase::Idle && !toggleRequested_);
+        !recordsVideo || (phase_ == Phase::Idle && !toggleRequested_ && !loopRequested_);
     const bool screenshotDone = !options_.exitAfterScreenshot || screenshotsQueued_ > 0;
     if (videoDone && screenshotDone) {
         automationFailed_ = automationFailed_ || !error_.empty();
@@ -408,6 +446,52 @@ void CaptureModule::drawSizeCombo(const AppContext& context) {
     }
 }
 
+void CaptureModule::drawLoopSection() {
+    ImGui::SeparatorText("Loop");
+    auto& loop = state_.loop;
+    const int geometry = state_.braid.geometryMode;
+    const bool autoRotate = geometry != 4 && state_.braid.autoRotate;
+    if (!loopDriverAvailable(geometry, loop.driver, autoRotate)) {
+        loop.driver = defaultLoopDriver(geometry);
+    }
+    ImGui::BeginDisabled(phase_ != Phase::Idle);
+    ImGui::Checkbox("Loop preview", &loop.enabled);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Rounds every motion to a whole number of cycles per loop,\n"
+                          "so the last frame flows into the first. Slow motions may\n"
+                          "speed up or stop; more cycles stay closer to free running.");
+    }
+    if (ImGui::BeginCombo("Length in", loopDriverLabel(geometry, loop.driver).data())) {
+        for (const LoopDriver driver : {LoopDriver::Wave, LoopDriver::Flow, LoopDriver::Rotation}) {
+            if (loopDriverAvailable(geometry, driver, autoRotate) &&
+                ImGui::Selectable(loopDriverLabel(geometry, driver).data(), driver == loop.driver)) {
+                loop.driver = driver;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SliderInt("Cycles", &loop.cycles, 1, 8);
+    const LoopPlan plan = planLoop(loopInputs(state_));
+    if (plan.valid) {
+        ImGui::Text("%.2f s, %llu frames at %u fps", plan.durationSeconds,
+                    static_cast<unsigned long long>(loopFrameCount(plan, options_.fps)),
+                    options_.fps);
+    } else {
+        ImGui::TextColored(ImVec4(1.0F, 0.75F, 0.2F, 1.0F), "%s", plan.problem.c_str());
+    }
+    ImGui::BeginDisabled(!plan.valid);
+    if (ImGui::Button("Record loop")) {
+        requestLoopRecording();
+    }
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
+    if (loop.recording) {
+        ImGui::SameLine();
+        ImGui::Text("%llu / %llu", static_cast<unsigned long long>(framesRecorded_),
+                    static_cast<unsigned long long>(recordLimit_));
+    }
+}
+
 void CaptureModule::drawPanel(const AppContext& context) {
     ImGui::SetNextWindowPos(ImVec2(20.0F, 650.0F), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350.0F, 320.0F), ImGuiCond_FirstUseEver);
@@ -482,6 +566,8 @@ void CaptureModule::drawPanel(const AppContext& context) {
         ImGui::TextUnformatted("Last file:");
         ImGui::TextWrapped("%s", writer.lastFile.string().c_str());
     }
+    drawLoopSection();
+
     const std::string& error = !error_.empty() ? error_ : writer.error;
     if (!error.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.35F, 0.3F, 1.0F));
