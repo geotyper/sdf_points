@@ -25,6 +25,10 @@ struct CaptureOptions {
     VideoCodec codec{defaultVideoCodec()};
     std::filesystem::path outputDirectory{"captures"};
     std::size_t writerQueueCapacity{6};
+    // Command-line automation: record this many frames at startup, then quit.
+    std::uint64_t exitAfterFrames{};
+    // Command-line automation: take one screenshot at startup, then quit.
+    bool exitAfterScreenshot{};
 };
 
 // Copies the scene render target (never the ImGui swapchain image) into a
@@ -36,6 +40,7 @@ public:
 
     void onAttach(AppContext& context) override;
     void onFrameBegin(AppContext& context, const FrameInfo& frame) override;
+    void onUpdate(AppContext& context, const FrameInfo& frame) override;
     void onRender(AppContext& context, const FrameInfo& frame) override;
     void onFrameEnd(AppContext& context, const FrameInfo& frame) override;
     void onDetach(AppContext& context) override;
@@ -44,6 +49,8 @@ public:
     void toggleRecording() { toggleRequested_ = true; }
     void requestScreenshot() { screenshotRequested_ = true; }
     [[nodiscard]] bool recording() const { return phase_ == Phase::Recording; }
+    // True when a command-line capture could not produce its file.
+    [[nodiscard]] bool automationFailed() const { return automationFailed_; }
 
 private:
     // A frame is read back once its fence has signalled. With one frame in flight
@@ -73,6 +80,8 @@ private:
     void drainCompleted(AppContext& context);
     void consumeSlot(AppContext& context, StagingSlot& slot);
     void noteBackpressure(double waitedMs);
+    void handleAutomation(AppContext& context);
+    void drawPanel(const AppContext& context);
 
     DemoState& state_;
     CaptureOptions options_;
@@ -90,6 +99,9 @@ private:
     bool screenshotPending_{};
     std::uint64_t framesRecorded_{};
     std::uint64_t backpressureFrames_{};
+    std::uint64_t screenshotsQueued_{};
+    bool automationStarted_{};
+    bool automationFailed_{};
     std::filesystem::path videoPath_;
     std::string error_;
 };

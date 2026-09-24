@@ -76,6 +76,7 @@ int Window::refreshRateHz() const {
 }
 
 void Window::pollEvents() const { glfwPollEvents(); }
+void Window::requestClose() const { glfwSetWindowShouldClose(window_, GLFW_TRUE); }
 
 void Window::waitForVisibleFramebuffer() const {
     int width = 0;

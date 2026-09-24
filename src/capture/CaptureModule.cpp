@@ -2,12 +2,16 @@
 
 #include "vkexp/core/FrameClock.hpp"
 #include "vkexp/core/VulkanContext.hpp"
+#include "vkexp/core/Window.hpp"
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/profiling/Profiler.hpp"
+
+#include <imgui.h>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <initializer_list>
 #include <iostream>
@@ -135,9 +139,11 @@ void CaptureModule::ensureTargets(AppContext& context, const VkExtent2D extent) 
     const VkDevice device = context.vulkan.device();
     destroyTargets(device);
     target_.create(context.vulkan.physicalDevice(), device,
+                   // SAMPLED only because ImageResource always creates a view.
                    ImageResourceConfig{extent, format_,
                                        VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+                                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                           VK_IMAGE_USAGE_SAMPLED_BIT});
     const VkDeviceSize frameBytes = VkDeviceSize{extent.width} * extent.height * 4U;
     for (StagingSlot& slot : ring_) {
         slot.buffer = createStagingBuffer(context.vulkan.physicalDevice(), device, frameBytes);
@@ -169,6 +175,11 @@ RawPixelFormat CaptureModule::pixelFormat() const {
 
 void CaptureModule::onFrameBegin(AppContext& context, const FrameInfo&) {
     context.profiler.cpu().addDuration(writeMetric_, writer_.takeWriteMilliseconds());
+    if (!automationStarted_ && (options_.exitAfterFrames > 0 || options_.exitAfterScreenshot)) {
+        automationStarted_ = true;
+        toggleRequested_ = options_.exitAfterFrames > 0;
+        screenshotRequested_ = options_.exitAfterScreenshot;
+    }
     if (phase_ == Phase::Recording) {
         if (const auto status = writer_.status(); status.failed) {
             error_ = status.error;
@@ -279,7 +290,7 @@ void CaptureModule::onRender(AppContext& context, const FrameInfo&) {
     }
 }
 
-void CaptureModule::onFrameEnd(AppContext&, const FrameInfo&) {
+void CaptureModule::onFrameEnd(AppContext& context, const FrameInfo&) {
     const bool videoInFlight = std::any_of(ring_.begin(), ring_.end(), [](const StagingSlot& slot) {
         return slot.busy && slot.video;
     });
@@ -289,6 +300,143 @@ void CaptureModule::onFrameEnd(AppContext&, const FrameInfo&) {
         std::cout << "[capture] Stopped after " << framesRecorded_
                   << " frames; ffmpeg finishes in the background\n";
     }
+    handleAutomation(context);
+}
+
+void CaptureModule::handleAutomation(AppContext& context) {
+    if (!automationStarted_) {
+        return;
+    }
+    if (phase_ == Phase::Recording && options_.exitAfterFrames > 0 &&
+        framesRecorded_ >= options_.exitAfterFrames) {
+        stopRecording(context);
+    }
+    const bool videoDone =
+        options_.exitAfterFrames == 0 || (phase_ == Phase::Idle && !toggleRequested_);
+    const bool screenshotDone = !options_.exitAfterScreenshot || screenshotsQueued_ > 0;
+    if (videoDone && screenshotDone) {
+        automationFailed_ = automationFailed_ || !error_.empty();
+        context.window.requestClose();
+    }
+}
+
+void CaptureModule::onUpdate(AppContext& context, const FrameInfo&) {
+    // io.WantCaptureKeyboard is also true whenever keyboard navigation has a
+    // focused window (NavEnableKeyboard), i.e. nearly always in this UI-only
+    // window. Yield the hotkeys only while a widget is actually being edited.
+    const ImGuiIO& io = ImGui::GetIO();
+    if (!io.WantTextInput && !ImGui::IsAnyItemActive()) {
+        if (ImGui::IsKeyPressed(ImGuiKey_F9, false)) {
+            toggleRecording();
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_F10, false)) {
+            requestScreenshot();
+        }
+    }
+    drawPanel(context);
+}
+
+void CaptureModule::drawPanel(const AppContext& context) {
+    ImGui::SetNextWindowPos(ImVec2(20.0F, 650.0F), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(350.0F, 320.0F), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Capture")) {
+        ImGui::End();
+        return;
+    }
+    const CaptureWriter::Status writer = writer_.status();
+    const double seconds =
+        static_cast<double>(framesRecorded_) / static_cast<double>(options_.fps);
+    const int minutes = static_cast<int>(seconds / 60.0);
+    switch (phase_) {
+    case Phase::Recording:
+        ImGui::TextColored(ImVec4(1.0F, 0.22F, 0.18F, 1.0F), "REC");
+        ImGui::SameLine();
+        ImGui::Text("frame %llu  %02d:%05.2f", static_cast<unsigned long long>(framesRecorded_),
+                    minutes, seconds - minutes * 60.0);
+        break;
+    case Phase::Finishing:
+        ImGui::TextUnformatted("Finishing...");
+        break;
+    case Phase::Idle:
+        ImGui::TextDisabled("Idle");
+        break;
+    }
+
+    ImGui::SeparatorText("Settings");
+    ImGui::BeginDisabled(phase_ != Phase::Idle);
+    constexpr std::array<CaptureResolution, 5> resolutions{{
+        {0, 0}, {1280, 720}, {1920, 1080}, {2560, 1440}, {3840, 2160}}};
+    const auto resolutionLabel = [](const CaptureResolution resolution) {
+        std::array<char, 32> label{};
+        if (resolution.width == 0) {
+            std::snprintf(label.data(), label.size(), "Framebuffer");
+        } else {
+            std::snprintf(label.data(), label.size(), "%ux%u", resolution.width,
+                          resolution.height);
+        }
+        return label;
+    };
+    if (ImGui::BeginCombo("Resolution", resolutionLabel(options_.resolution).data())) {
+        for (const CaptureResolution resolution : resolutions) {
+            const bool selected = resolution.width == options_.resolution.width &&
+                                  resolution.height == options_.resolution.height;
+            if (ImGui::Selectable(resolutionLabel(resolution).data(), selected)) {
+                options_.resolution = resolution;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    constexpr std::array<std::uint32_t, 5> rates{24, 30, 50, 60, 120};
+    if (ImGui::BeginCombo("FPS", std::to_string(options_.fps).c_str())) {
+        for (const std::uint32_t rate : rates) {
+            if (ImGui::Selectable(std::to_string(rate).c_str(), rate == options_.fps)) {
+                options_.fps = rate;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::BeginCombo("Codec", videoCodecName(options_.codec).data())) {
+        for (const VideoCodec codec : {VideoCodec::Hevc, VideoCodec::ProRes, VideoCodec::H264}) {
+            if (ImGui::Selectable(videoCodecName(codec).data(), codec == options_.codec)) {
+                options_.codec = codec;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    const VkExtent2D output = phase_ == Phase::Idle ? captureExtent(context) : target_.extent();
+    ImGui::Text("Output: %ux%u @ %u fps, %s", output.width, output.height, options_.fps,
+                videoFileExtension(options_.codec).data());
+
+    ImGui::SeparatorText("Controls");
+    ImGui::BeginDisabled(phase_ == Phase::Finishing);
+    if (ImGui::Button(phase_ == Phase::Recording ? "Stop (F9)" : "Record (F9)")) {
+        toggleRecording();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Screenshot (F10)")) {
+        requestScreenshot();
+    }
+    ImGui::Text("Writer queue: %zu / %zu", writer.queueDepth, writer.queueCapacity);
+    ImGui::ProgressBar(static_cast<float>(writer.queueDepth) /
+                           static_cast<float>(std::max<std::size_t>(writer.queueCapacity, 1)),
+                       ImVec2(-1.0F, 0.0F), "");
+    if (backpressureFrames_ > 0) {
+        ImGui::TextColored(ImVec4(1.0F, 0.75F, 0.2F, 1.0F), "Encoder backpressure: %llu frames",
+                           static_cast<unsigned long long>(backpressureFrames_));
+    }
+    if (!writer.lastFile.empty()) {
+        ImGui::TextUnformatted("Last file:");
+        ImGui::TextWrapped("%s", writer.lastFile.string().c_str());
+    }
+    const std::string& error = !error_.empty() ? error_ : writer.error;
+    if (!error.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.35F, 0.3F, 1.0F));
+        ImGui::TextWrapped("%s", error.c_str());
+        ImGui::PopStyleColor();
+    }
+    ImGui::End();
 }
 
 void CaptureModule::recordCopy(const VkCommandBuffer commands, StagingSlot& slot) {
@@ -418,6 +566,7 @@ void CaptureModule::consumeSlot(AppContext& context, StagingSlot& slot) {
             copyOut(), extent.width, extent.height, pixelFormat(),
             uniqueCapturePath(options_.outputDirectory, localTimeNow(), ".png"));
         context.profiler.cpu().addDuration(waitMetric_, waitedMs);
+        ++screenshotsQueued_;
     }
 }
 
@@ -443,6 +592,10 @@ void CaptureModule::onDetach(AppContext& context) {
     }
     context.clock.clearFixedStep();
     writer_.shutdown(); // flushes the queue and waits for ffmpeg to finish the file
+    if (automationStarted_) {
+        const CaptureWriter::Status status = writer_.status();
+        automationFailed_ = automationFailed_ || status.failed || !status.error.empty();
+    }
     state_.viewport.lockedExtent.reset();
     destroyTargets(context.vulkan.device());
 }

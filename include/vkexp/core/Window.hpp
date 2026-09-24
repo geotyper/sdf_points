@@ -17,6 +17,7 @@ public:
     [[nodiscard]] bool shouldClose() const;
     [[nodiscard]] int refreshRateHz() const;
     void pollEvents() const;
+    void requestClose() const;
     void waitForVisibleFramebuffer() const;
     [[nodiscard]] GLFWwindow* handle() const { return window_; }
 
