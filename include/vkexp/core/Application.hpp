@@ -15,7 +15,7 @@ namespace vkexp {
 struct ApplicationConfig {
     int windowWidth{1280};
     int windowHeight{720};
-    std::string title{"Vulkan compute boilerplate"};
+    std::string title{"sdf_points"};
     bool validationEnabled{true};
 };
 

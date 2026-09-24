@@ -111,7 +111,7 @@ int main(const int argc, char** argv) {
         vkexp::Application app{vkexp::ApplicationConfig{
             state.preset.windowWidth,
             state.preset.windowHeight,
-            "Vulkan compute boilerplate",
+            "sdf_points",
             validationEnabled,
         }};
 
