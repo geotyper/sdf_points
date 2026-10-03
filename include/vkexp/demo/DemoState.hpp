@@ -35,7 +35,7 @@ struct ComputeOutput {
 };
 
 struct BraidSettings {
-    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus
+    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid
     bool paused{};
     bool autoRotate{false};
     bool limitTubeOverlap{false};
@@ -135,6 +135,25 @@ struct MorphSettings {
     std::array<float, 3> secondColor{0.14F, 0.58F, 1.00F};
 };
 
+// Ridges carved into tubes: screw threads, or beads when there are none around.
+struct TubeRidges {
+    float depth{0.0F};
+    float travelRate{1.5F};
+    int around{2};
+    int along{30};
+
+    // Packed for the shader: depth, travel rate, around + (along + 32) / 128.
+    [[nodiscard]] std::array<float, 3> packed() const {
+        return {depth, travelRate,
+                static_cast<float>(around) + static_cast<float>(along + 32) / 128.0F};
+    }
+};
+
+struct RidgedBraidSettings {
+    int braid{1}; // which braid variant (0..3) carries the ridges
+    TubeRidges ridges{0.80F, 1.5F, 2, 30};
+};
+
 struct VortexSettings {
     bool paused{};
     float animationSpeed{0.30F};
@@ -153,6 +172,7 @@ struct VortexSettings {
     int minorPointCount{26};
     std::array<float, 3> holeColor{1.00F, 0.62F, 0.16F};
     std::array<float, 3> rimColor{0.14F, 0.58F, 1.00F};
+    TubeRidges ridges;
 };
 
 struct RidgedTorusSettings {
@@ -218,13 +238,20 @@ struct DemoState {
     MorphSettings morph;
     VortexSettings vortex;
     RidgedTorusSettings ridgedTorus;
+    RidgedBraidSettings ridgedBraid;
     StrandPalette palette;
     LoopSettings loop;
 };
 
+// The braid variant in charge of the motion: a ridged braid moves like the
+// braid it is carved into. Other geometries stand for themselves.
+[[nodiscard]] inline int motionGeometryMode(const DemoState& state) {
+    return state.braid.geometryMode == 10 ? state.ridgedBraid.braid : state.braid.geometryMode;
+}
+
 [[nodiscard]] inline LoopInputs loopInputs(const DemoState& state) {
     LoopInputs inputs;
-    inputs.geometryMode = state.braid.geometryMode;
+    inputs.geometryMode = motionGeometryMode(state);
     inputs.driver = state.loop.driver;
     inputs.cycles = state.loop.cycles;
     if (state.braid.geometryMode == 4) {

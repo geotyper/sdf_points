@@ -115,6 +115,16 @@ at 1 the figure returns to the plain torus once per pulse. Launch it with
 count, twist, twist wave, ridge height and sharpness, ring and tube radius, point
 count and appearance, tilt and the two colors.
 
+**Ridged braid** carves travelling ridges into the tubes of any of the four braids,
+picked with its own **Braid** selector; the braid keeps all of its usual controls and
+motion. **Ridges around** the section and **Ridges along** the strand combine into
+screw threads that appear to run down the tubes; with none around they are beads, with
+none along they are straight flutes that spin. Crests keep the tube's radius, so the
+ridges never add to the overlap between strands, and the valleys fall into shade. The
+**Screw**, **Beads**, **Flutes** and **Counter screw** buttons apply tuned combinations.
+Launch it with `--preset ridged-braid`. **Vortex ring** has the same ridge controls,
+off by default.
+
 Point visibility is evaluated per fragment against the hidden perforated depth shell.
 At silhouettes and opening boundaries, only the covered part of a circular sprite is
 removed instead of making the entire point disappear when its center becomes hidden.

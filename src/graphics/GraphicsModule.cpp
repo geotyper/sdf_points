@@ -215,7 +215,7 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         loopCycles_ = static_cast<float>(recording->phaseCycles);
         if (state_.braid.geometryMode == 4) {
             nestedSphereTime_ += static_cast<float>(recording->phaseStep);
-        } else if (state_.braid.geometryMode >= 5) {
+        } else if (state_.braid.geometryMode >= 5 && state_.braid.geometryMode <= 9) {
             eversionTime_ += static_cast<float>(recording->phaseStep);
         } else {
             weaveTime_ += static_cast<float>(recording->phaseStep);
@@ -536,9 +536,9 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 vortex.rimColor[2],
                 0.0F,
                 loopCycles_,
-                0.0F,
-                0.0F,
-                0.0F,
+                vortex.ridges.packed()[0],
+                vortex.ridges.packed()[1],
+                vortex.ridges.packed()[2],
             };
         } else if (braid.geometryMode == 9) {
             const auto& torus = state_.ridgedTorus;
@@ -597,7 +597,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 -1.0F,
                 -1.0F,
                 -1.0F,
-                static_cast<float>(braid.geometryMode),
+                static_cast<float>(motionGeometryMode(state_)),
                 braid.releaseStrength,
                 braid.releaseWidth,
                 braid.releaseSpeed,
@@ -611,6 +611,10 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 0.0F,
                 0.0F,
             };
+            if (braid.geometryMode == 10) {
+                const auto ridges = state_.ridgedBraid.ridges.packed();
+                std::copy(ridges.begin(), ridges.end(), pushConstants.begin() + 29);
+            }
         }
         vkCmdPushConstants(commands, pipelineLayout_,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -621,7 +625,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         const auto objectCount = static_cast<std::uint32_t>(
             braid.geometryMode == 4   ? state_.nestedSpheres.sphereCount
             : braid.geometryMode == 8 ? state_.vortex.strands
-            : braid.geometryMode >= 5 ? 1
+            : braid.geometryMode >= 5 && braid.geometryMode <= 9 ? 1
                                       : braid.strands);
         vkCmdDraw(commands, 720U * 64U * 6U, objectCount, 0, 0);
         vkCmdEndRendering(commands);

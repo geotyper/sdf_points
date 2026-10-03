@@ -185,7 +185,7 @@ void CaptureModule::onFrameBegin(AppContext& context, const FrameInfo& frame) {
         state_.loop.enabled = true;
         state_.loop.cycles = options_.exitAfterLoopCycles;
         state_.loop.driver =
-            options_.loopDriver.value_or(defaultLoopDriver(state_.braid.geometryMode));
+            options_.loopDriver.value_or(defaultLoopDriver(motionGeometryMode(state_)));
         loopRequested_ = true;
         screenshotRequested_ = options_.exitAfterScreenshot;
     }
@@ -282,7 +282,7 @@ void CaptureModule::startLoopRecording(AppContext& context) {
         LoopSettings::Recording{plan.phaseCycles, phaseStep, phaseStep * plan.rotationPerPhase};
     recordLimit_ = frames;
     std::cout << "[capture] Loop: " << state_.loop.cycles << " x "
-              << loopDriverLabel(state_.braid.geometryMode, state_.loop.driver) << ", " << frames
+              << loopDriverLabel(motionGeometryMode(state_), state_.loop.driver) << ", " << frames
               << " frames (" << plan.durationSeconds << " s)\n";
 }
 
@@ -449,7 +449,7 @@ void CaptureModule::drawSizeCombo(const AppContext& context) {
 void CaptureModule::drawLoopSection() {
     ImGui::SeparatorText("Loop");
     auto& loop = state_.loop;
-    const int geometry = state_.braid.geometryMode;
+    const int geometry = motionGeometryMode(state_);
     const bool autoRotate = geometry < 4 && state_.braid.autoRotate;
     if (!loopDriverAvailable(geometry, loop.driver, autoRotate)) {
         loop.driver = defaultLoopDriver(geometry);

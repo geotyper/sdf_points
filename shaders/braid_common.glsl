@@ -8,7 +8,10 @@ layout(push_constant) uniform BraidPush {
     vec4 wave;       // release strength, angular width, travel speed, squircle exponent
     vec4 motion;     // whole-loop torsion, travelling compression, circulation, optional radius limit
     vec4 loop;       // x: loop length in 2*pi cycles of the flow phase (0 = free running)
-                     // z: closed point lattice step (0 = golden-angle spiral)
+                     // Cloth geometries: y = pulse depth, z = closed point lattice
+                     // step (0 = golden-angle spiral). Tube geometries: y = ridge
+                     // depth (0 = smooth), z = ridge travel rate, w = ridges around
+                     // the tube + (ridges along it + 32) / 128.
 } pc;
 
 const float TAU = 6.28318530718;
@@ -636,6 +639,20 @@ void tubeFrame(float u, float strand, out vec3 center, out vec3 tangent,
     }
 }
 
+// Ridges carved into a tube: 1 on the crests, 0 in the valleys. Ridges around
+// the section and along the strand combine into screw threads; with none around
+// they are beads running along it. The wave travels, the points stay put.
+float tubeRidge(float u, float v) {
+    float around = floor(pc.loop.w);
+    float along = fract(pc.loop.w) * 128.0 - 32.0;
+    return pow(max(0.5 + 0.5 * cos(around * v - along * u + timePhase(pc.loop.z)), 0.0), 1.5);
+}
+
+bool tubeRidges() {
+    return pc.loop.y > 0.0 && !nestedSphereMode() && !eversionMode() && !sleeveMode()
+        && !morphMode() && !ridgeMode();
+}
+
 vec3 surfacePoint(float u, float v, float strand) {
     if (nestedSphereMode()) {
         return nestedSpherePoint(u, v, strand);
@@ -656,6 +673,10 @@ vec3 surfacePoint(float u, float v, float strand) {
     vec3 center, tangent, x, y;
     float radius;
     tubeFrame(u, strand, center, tangent, x, y, radius);
+    if (tubeRidges()) {
+        // Crests keep the tube's radius, so ridges never add to its overlap.
+        radius *= 1.0 - 0.6 * pc.loop.y * (1.0 - tubeRidge(u, v));
+    }
     return center + radius * (x * cos(v) + y * sin(v));
 }
 

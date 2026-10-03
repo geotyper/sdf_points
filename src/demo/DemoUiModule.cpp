@@ -9,8 +9,28 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <initializer_list>
 
 namespace vkexp {
+namespace {
+
+void drawTubeRidges(TubeRidges& ridges) {
+    ImGui::SliderFloat("Ridge depth", &ridges.depth, 0.0F, 1.0F, "%.2f");
+    ImGui::BeginDisabled(ridges.depth <= 0.0F);
+    ImGui::SliderInt("Ridges around", &ridges.around, 0, 8);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("0 with ridges along: beads running down the tube.");
+    }
+    ImGui::SliderInt("Ridges along", &ridges.along, -32, 64);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Crests per lap of the ring; with ridges around\n"
+                          "they become screw threads. Negative reverses the screw.");
+    }
+    ImGui::SliderFloat("Ridge travel", &ridges.travelRate, -4.0F, 4.0F, "%.2f");
+    ImGui::EndDisabled();
+}
+
+} // namespace
 
 DemoUiModule::DemoUiModule(DemoState& state, ImGuiModule& imgui, Profiler& profiler)
     : state_(state), imgui_(imgui), metric_(profiler.registerMetric("Demo UI")) {}
@@ -57,23 +77,23 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
     constexpr std::array geometryNames{"Plait",         "Twisted bundle", "Torsion loop",
                                        "Orbital bloom", "Nested spheres", "Punctured sphere",
                                        "Sleeve",        "Morphing sleeve", "Vortex ring",
-                                       "Ridged torus"};
+                                       "Ridged torus",  "Ridged braid"};
     const auto geometryCount = static_cast<int>(geometryNames.size());
     braid.geometryMode = std::clamp(braid.geometryMode, 0, geometryCount - 1);
     if (ImGui::BeginCombo("Geometry",
                           geometryNames[static_cast<std::size_t>(braid.geometryMode)])) {
-        const auto group = [&](const char* title, const int first, const int last) {
+        const auto group = [&](const char* title, const std::initializer_list<int> modes) {
             ImGui::SeparatorText(title);
-            for (int mode = first; mode <= last; ++mode) {
+            for (const int mode : modes) {
                 if (ImGui::Selectable(geometryNames[static_cast<std::size_t>(mode)],
                                       braid.geometryMode == mode)) {
                     braid.geometryMode = mode;
                 }
             }
         };
-        group("Braids", 0, 3);
-        group("Spheres", 4, 4);
-        group("Eversion", 5, 9);
+        group("Braids", {0, 1, 2, 3, 10});
+        group("Spheres", {4});
+        group("Eversion", {5, 6, 7, 8, 9});
         ImGui::EndCombo();
     }
     if (braid.geometryMode == 9) {
@@ -121,6 +141,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             ImGui::SetTooltip("Strand positions each strand advances per lap of the ring.");
         }
         ImGui::SliderFloat("Twist wave", &vortex.twistWave, 0.0F, 2.5F, "%.2f");
+        drawTubeRidges(vortex.ridges);
         ImGui::SliderFloat("Ring radius", &vortex.ringRadius, 0.80F, 1.30F, "%.2f");
         ImGui::SliderFloat("Coil radius", &vortex.coilRadius, 0.25F, 0.65F, "%.2f");
         ImGui::SliderFloat("Tube radius", &vortex.tubeRadius, 0.05F, 0.30F, "%.3f");
@@ -257,7 +278,31 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             ImGui::TextDisabled("The palette repeats after color 5.");
         }
     } else {
-        if (ImGui::Button("Orbital bloom preset")) {
+        const bool ridged = braid.geometryMode == 10;
+        if (ridged) {
+            auto& ridgedBraid = state_.ridgedBraid;
+            ImGui::Combo("Braid", &ridgedBraid.braid,
+                         "Plait\0Twisted bundle\0Torsion loop\0Orbital bloom\0");
+            drawTubeRidges(ridgedBraid.ridges);
+            if (ImGui::Button("Screw")) {
+                ridgedBraid.ridges = TubeRidges{0.80F, 1.5F, 2, 30};
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Beads")) {
+                ridgedBraid.ridges = TubeRidges{0.9F, 2.0F, 0, 24};
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Flutes")) {
+                ridgedBraid.ridges = TubeRidges{0.7F, 1.0F, 6, 0};
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Counter screw")) {
+                ridgedBraid.ridges = TubeRidges{0.80F, 2.0F, 3, -30};
+            }
+            ImGui::Separator();
+        }
+        const int braidMode = motionGeometryMode(state_);
+        if (!ridged && ImGui::Button("Orbital bloom preset")) {
             braid = BraidSettings{};
             braid.geometryMode = 3;
             braid.majorRadius = 1.20F;
@@ -278,12 +323,12 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderInt("Strands", &braid.strands, 2, 5);
         ImGui::SliderInt("Twists", &braid.twists, 1, 6);
         ImGui::SliderFloat("Ring radius", &braid.majorRadius, 0.9F, 1.5F, "%.2f");
-        if (braid.geometryMode != 3) {
+        if (braidMode != 3) {
             ImGui::SliderFloat("Square shape", &braid.squareness, 2.0F, 6.0F, "%.2f");
         }
         ImGui::SliderFloat("Weave radius", &braid.weaveRadius, 0.15F, 0.52F, "%.2f");
         ImGui::SliderFloat("Tube radius", &braid.tubeRadius, 0.12F, 0.32F, "%.3f");
-        if (braid.geometryMode != 0) {
+        if (braidMode != 0) {
             ImGui::Checkbox("Limit tube overlap", &braid.limitTubeOverlap);
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip(
@@ -292,15 +337,15 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             }
         }
         ImGui::SliderFloat("Radius variation", &braid.radiusVariation, 0.0F, 0.55F, "%.2f");
-        if (braid.geometryMode == 2) {
+        if (braidMode == 2) {
             ImGui::SliderFloat("Whole-loop twist", &braid.wholeLoopTorsion, 0.0F, 1.5F, "%.2f");
             ImGui::SliderFloat("Compression wave", &braid.torsionCompression, 0.0F, 1.2F, "%.2f");
             ImGui::SliderFloat("Circulation", &braid.materialCirculation, -0.4F, 0.4F, "%.2f");
-        } else if (braid.geometryMode != 3) {
+        } else if (braidMode != 3) {
             ImGui::SliderFloat("Unravel wave", &braid.releaseStrength, 0.0F, 0.95F, "%.2f");
             ImGui::SliderFloat("Wave width", &braid.releaseWidth, 0.3F, 1.1F, "%.2f");
         }
-        if (braid.geometryMode != 3) {
+        if (braidMode != 3) {
             ImGui::SliderFloat("Wave travel", &braid.releaseSpeed, 0.3F, 2.0F, "%.2f");
         }
         ImGui::SliderInt("Points along", &braid.majorPointCount, 120, 720);
@@ -328,7 +373,9 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         }
         ImGui::SliderAngle("Tilt", &braid.tilt, -35.0F, 35.0F);
         if (ImGui::Button("Reset braid")) {
+            const int geometryMode = braid.geometryMode;
             braid = BraidSettings{};
+            braid.geometryMode = geometryMode;
         }
     }
 

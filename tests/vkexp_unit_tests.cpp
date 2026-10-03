@@ -2,6 +2,7 @@
 #include "vkexp/capture/CaptureWriter.hpp"
 #include "vkexp/compute/ComputeResources.hpp"
 #include "vkexp/core/FrameClock.hpp"
+#include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/LoopPlan.hpp"
 #include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/presets/PresetRegistry.hpp"
@@ -68,7 +69,7 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 9, "Built-in preset count");
+    check(registry.all().size() == 10, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
     check(registry.require("nested-spheres").initialGeometryMode == 4,
@@ -81,6 +82,14 @@ void testPresetRegistry() {
     check(registry.require("vortex-ring").initialGeometryMode == 8, "Vortex ring initial geometry");
     check(registry.require("ridged-torus").initialGeometryMode == 9,
           "Ridged torus initial geometry");
+    check(registry.require("ridged-braid").initialGeometryMode == 10,
+          "Ridged braid initial geometry");
+    vkexp::DemoState ridged{registry.require("ridged-braid")};
+    ridged.ridgedBraid.braid = 2;
+    check(vkexp::motionGeometryMode(ridged) == 2 && vkexp::loopInputs(ridged).geometryMode == 2,
+          "Ridged braid moves like its braid");
+    check(vkexp::TubeRidges{0.5F, 1.0F, 3, -18}.packed()[2] == 3.0F + 14.0F / 128.0F,
+          "Tube ridge counts pack exactly");
 
     registry.loadWindowPreset(VKEXP_TEST_WINDOW_PRESET);
     for (const auto& preset : registry.all()) {

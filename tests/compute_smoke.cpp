@@ -439,6 +439,33 @@ void runBraidPeriodicity(vkexp::HeadlessComputeContext& context) {
     if (!crestSeen) {
         throw std::runtime_error("Ridged torus raises no ridges at mid pulse");
     }
+
+    // Ridged braid: ridges only carve into the tube, between its radius on the
+    // crests and the valley depth.
+    constexpr float braidTube = 0.195F;
+    constexpr float ridgeDepth = 0.8F;
+    settings = {700,   700, 0,     0, 1.23F, 0.38F, braidTube,  3,
+                360,   40,  1.65F, 3, 0.10F, 0.15F, 1.15F,      0,
+                0,     0,   0,     1, 0,     0.65F, 1.15F,      4,
+                0.85F, 0,   0.18F, 0, 0,     ridgeDepth, 1.5F, 3.0F + (6.0F + 32.0F) / 128.0F};
+    bool crest = false;
+    bool valley = false;
+    for (float phase : {0.0F, 2.1F, 5.5F}) {
+        settings[2] = phase;
+        const auto tubes = sample();
+        for (std::size_t value = 0; value < floatCount; value += 8) {
+            const float distance = tubes[value + 3];
+            if (!(distance < braidTube + 0.0002F) ||
+                !(distance > braidTube * (1.0F - 0.6F * ridgeDepth) - 0.0002F)) {
+                throw std::runtime_error("Ridged braid ridges leave the tube's depth range");
+            }
+            crest = crest || distance > braidTube * 0.95F;
+            valley = valley || distance < braidTube * 0.60F;
+        }
+    }
+    if (!crest || !valley) {
+        throw std::runtime_error("Ridged braid shows no ridges");
+    }
 }
 
 int run() {

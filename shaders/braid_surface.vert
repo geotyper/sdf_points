@@ -26,5 +26,11 @@ void main() {
         gl_Position = projectPoint(ridgePoint(material.x, material.y));
         return;
     }
+    if (tubeRidges()) {
+        // Ridges need more cells around the tube than a smooth one does.
+        const ivec2 grid = ivec2(240, SURFACE_ROWS * SURFACE_COLUMNS / 240);
+        sampleIndex = ivec2(cell / grid.y, cell % grid.y) + corners[gl_VertexIndex % 6];
+        material = TAU * vec2(sampleIndex) / vec2(grid);
+    }
     gl_Position = projectPoint(surfacePoint(material.x, material.y, float(gl_InstanceIndex)));
 }

@@ -65,6 +65,14 @@ PresetRegistry::PresetRegistry()
                  1280,
                  720,
                  9},
+          Preset{"ridged-braid",
+                 "Braided point tubes with ridges travelling along them",
+                 true,
+                 false,
+                 {0.004F, 0.0003F, 0.004F, 1.0F},
+                 1280,
+                 720,
+                 10},
       } {}
 
 void PresetRegistry::loadWindowPreset(const std::string_view path) {

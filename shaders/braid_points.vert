@@ -129,6 +129,10 @@ void main() {
     if (pc.style.x >= 0.0) {
         tint = pc.style.rgb;
     }
+    if (tubeRidges()) {
+        // Valleys fall into shade so the travelling crests read clearly.
+        tint *= mix(1.0 - 0.6 * pc.loop.y, 1.0, tubeRidge(u, v));
+    }
     pointColor = tint * illumination * pc.look.z;
     pointFacing = smoothstep(-0.015, 0.025, normal.z);
 
