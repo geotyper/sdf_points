@@ -2,6 +2,7 @@
 
 #include "vkexp/core/VulkanContext.hpp"
 #include "vkexp/demo/DemoState.hpp"
+#include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/profiling/Profiler.hpp"
 
 #include <algorithm>
@@ -214,6 +215,8 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         loopCycles_ = static_cast<float>(recording->phaseCycles);
         if (state_.braid.geometryMode == 4) {
             nestedSphereTime_ += static_cast<float>(recording->phaseStep);
+        } else if (state_.braid.geometryMode >= 5) {
+            eversionTime_ += static_cast<float>(recording->phaseStep);
         } else {
             weaveTime_ += static_cast<float>(recording->phaseStep);
             rotationTime_ += static_cast<float>(recording->rotationStep);
@@ -227,6 +230,26 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         if (state_.braid.geometryMode == 4) {
             if (!state_.nestedSpheres.paused) {
                 nestedSphereTime_ += frame.deltaSeconds * state_.nestedSpheres.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 5) {
+            if (!state_.eversion.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.eversion.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 6) {
+            if (!state_.sleeve.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.sleeve.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 7) {
+            if (!state_.morph.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.morph.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 8) {
+            if (!state_.vortex.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.vortex.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 9) {
+            if (!state_.ridgedTorus.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.ridgedTorus.animationSpeed;
             }
         } else if (!state_.braid.paused) {
             const float phaseStep = frame.deltaSeconds * state_.braid.animationSpeed;
@@ -251,6 +274,15 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
     context.vulkan.waitIdle();
     destroyRenderTarget();
     createRenderTarget(context, requested);
+}
+
+float GraphicsModule::latticeStep(const int pointCount) {
+    // The search runs only when the point count slider moves.
+    if (pointCount != latticeCount_) {
+        latticeCount_ = pointCount;
+        latticeStep_ = closedLatticeStep(pointCount);
+    }
+    return static_cast<float>(latticeStep_);
 }
 
 void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
@@ -364,6 +396,186 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 0.0F,
                 0.0F,
             };
+        } else if (braid.geometryMode == 5) {
+            const auto& eversion = state_.eversion;
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                eversion.radius,
+                eversion.holeAngle,
+                eversion.endHold,
+                eversion.spin,
+                static_cast<float>(eversion.pointCount),
+                1.0F,
+                eversion.pointSize,
+                1.0F,
+                eversion.tilt,
+                eversion.glow,
+                eversion.brightness,
+                0.0F,
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                5.0F,
+                eversion.outerColor[0],
+                eversion.outerColor[1],
+                eversion.outerColor[2],
+                0.0F,
+                eversion.innerColor[0],
+                eversion.innerColor[1],
+                eversion.innerColor[2],
+                0.0F,
+                loopCycles_,
+                0.0F,
+                0.0F,
+                0.0F,
+            };
+        } else if (braid.geometryMode == 6) {
+            const auto& sleeve = state_.sleeve;
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                sleeve.outerRadius,
+                sleeve.halfLength,
+                sleeve.innerRatio,
+                static_cast<float>(sleeve.bands),
+                static_cast<float>(sleeve.pointCount),
+                1.0F,
+                sleeve.pointSize,
+                1.0F,
+                sleeve.tilt,
+                sleeve.glow,
+                sleeve.brightness,
+                0.0F,
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                6.0F,
+                sleeve.firstColor[0],
+                sleeve.firstColor[1],
+                sleeve.firstColor[2],
+                sleeve.spin,
+                sleeve.secondColor[0],
+                sleeve.secondColor[1],
+                sleeve.secondColor[2],
+                0.0F,
+                loopCycles_,
+                0.0F,
+                latticeStep(sleeve.pointCount),
+                0.0F,
+            };
+        } else if (braid.geometryMode == 7) {
+            const auto& morph = state_.morph;
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                morph.size,
+                morph.holeRatio,
+                morph.roundness,
+                static_cast<float>(morph.bands),
+                static_cast<float>(morph.pointCount),
+                morph.halfLength,
+                morph.pointSize,
+                1.0F,
+                morph.tilt,
+                morph.glow,
+                morph.brightness,
+                morph.morphAmount,
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                7.0F,
+                morph.firstColor[0],
+                morph.firstColor[1],
+                morph.firstColor[2],
+                morph.spin,
+                morph.secondColor[0],
+                morph.secondColor[1],
+                morph.secondColor[2],
+                morph.morphRate,
+                loopCycles_,
+                0.0F,
+                latticeStep(morph.pointCount),
+                0.0F,
+            };
+        } else if (braid.geometryMode == 8) {
+            const auto& vortex = state_.vortex;
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                vortex.ringRadius,
+                vortex.coilRadius,
+                vortex.tubeRadius,
+                static_cast<float>(vortex.twist),
+                static_cast<float>(vortex.majorPointCount),
+                static_cast<float>(vortex.minorPointCount),
+                vortex.pointSize,
+                static_cast<float>(vortex.strands),
+                vortex.tilt,
+                vortex.glow,
+                vortex.brightness,
+                vortex.twistWave,
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                8.0F,
+                vortex.holeColor[0],
+                vortex.holeColor[1],
+                vortex.holeColor[2],
+                vortex.spin,
+                vortex.rimColor[0],
+                vortex.rimColor[1],
+                vortex.rimColor[2],
+                0.0F,
+                loopCycles_,
+                0.0F,
+                0.0F,
+                0.0F,
+            };
+        } else if (braid.geometryMode == 9) {
+            const auto& torus = state_.ridgedTorus;
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                torus.ringRadius,
+                torus.tubeRadius,
+                torus.ridgeHeight,
+                static_cast<float>(torus.ridges),
+                static_cast<float>(torus.pointCount),
+                static_cast<float>(torus.twist),
+                torus.pointSize,
+                torus.sharpness,
+                torus.tilt,
+                torus.glow,
+                torus.brightness,
+                torus.twistWave,
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                9.0F,
+                torus.ridgeColor[0],
+                torus.ridgeColor[1],
+                torus.ridgeColor[2],
+                torus.spin,
+                torus.bodyColor[0],
+                torus.bodyColor[1],
+                torus.bodyColor[2],
+                torus.pulseRate,
+                loopCycles_,
+                torus.pulseDepth,
+                latticeStep(torus.pointCount),
+                0.0F,
+            };
         } else {
             pushConstants = {
                 static_cast<float>(extent.width),
@@ -407,7 +619,10 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         // depth-only skin hides rear points even in the gaps between sprites.
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, surfacePipeline_);
         const auto objectCount = static_cast<std::uint32_t>(
-            braid.geometryMode == 4 ? state_.nestedSpheres.sphereCount : braid.strands);
+            braid.geometryMode == 4   ? state_.nestedSpheres.sphereCount
+            : braid.geometryMode == 8 ? state_.vortex.strands
+            : braid.geometryMode >= 5 ? 1
+                                      : braid.strands);
         vkCmdDraw(commands, 720U * 64U * 6U, objectCount, 0, 0);
         vkCmdEndRendering(commands);
 
@@ -464,6 +679,21 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                     static_cast<std::uint32_t>(sizeof(sphereDraw)), sphereDraw.data());
                 vkCmdDraw(commands, 6, spherePointCount, 0, 0);
             }
+        } else if (braid.geometryMode == 5) {
+            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.eversion.pointCount), 0, 0);
+        } else if (braid.geometryMode == 6) {
+            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.sleeve.pointCount), 0, 0);
+        } else if (braid.geometryMode == 7) {
+            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.morph.pointCount), 0, 0);
+        } else if (braid.geometryMode == 9) {
+            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.ridgedTorus.pointCount), 0,
+                      0);
+        } else if (braid.geometryMode == 8) {
+            const auto& vortex = state_.vortex;
+            vkCmdDraw(commands, 6,
+                      static_cast<std::uint32_t>(vortex.majorPointCount * vortex.minorPointCount *
+                                                 vortex.strands),
+                      0, 0);
         } else if (state_.palette.enabled) {
             const auto pointsPerStrand =
                 static_cast<std::uint32_t>(braid.majorPointCount * braid.minorPointCount);

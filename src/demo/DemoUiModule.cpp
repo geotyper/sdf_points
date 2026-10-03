@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace vkexp {
@@ -53,9 +54,168 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
 
     ImGui::SeparatorText("Point geometry");
     auto& braid = state_.braid;
-    ImGui::Combo("Geometry", &braid.geometryMode,
-                 "Plait\0Twisted bundle\0Torsion loop\0Orbital bloom\0Nested spheres\0");
-    if (braid.geometryMode == 4) {
+    constexpr std::array geometryNames{"Plait",         "Twisted bundle", "Torsion loop",
+                                       "Orbital bloom", "Nested spheres", "Punctured sphere",
+                                       "Sleeve",        "Morphing sleeve", "Vortex ring",
+                                       "Ridged torus"};
+    const auto geometryCount = static_cast<int>(geometryNames.size());
+    braid.geometryMode = std::clamp(braid.geometryMode, 0, geometryCount - 1);
+    if (ImGui::BeginCombo("Geometry",
+                          geometryNames[static_cast<std::size_t>(braid.geometryMode)])) {
+        const auto group = [&](const char* title, const int first, const int last) {
+            ImGui::SeparatorText(title);
+            for (int mode = first; mode <= last; ++mode) {
+                if (ImGui::Selectable(geometryNames[static_cast<std::size_t>(mode)],
+                                      braid.geometryMode == mode)) {
+                    braid.geometryMode = mode;
+                }
+            }
+        };
+        group("Braids", 0, 3);
+        group("Spheres", 4, 4);
+        group("Eversion", 5, 9);
+        ImGui::EndCombo();
+    }
+    if (braid.geometryMode == 9) {
+        auto& torus = state_.ridgedTorus;
+        ImGui::Checkbox("Pause", &torus.paused);
+        ImGui::SliderFloat("Roll speed", &torus.animationSpeed, 0.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Pulse depth", &torus.pulseDepth, 0.0F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0: ridges stay at full height.\n"
+                              "1: they sink back into the plain torus every pulse.");
+        }
+        ImGui::SliderFloat("Pulse speed", &torus.pulseRate, 0.0F, 4.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Pulses per roll of the ring.");
+        }
+        ImGui::SliderFloat("Spin", &torus.spin, -1.0F, 1.0F, "%.2f");
+        ImGui::SliderInt("Ridges", &torus.ridges, 1, 9);
+        ImGui::SliderInt("Twist", &torus.twist, -5, 5);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Turns of the ridges around the tube per lap of the ring.");
+        }
+        ImGui::SliderFloat("Twist wave", &torus.twistWave, 0.0F, 2.5F, "%.2f");
+        ImGui::SliderFloat("Ridge height", &torus.ridgeHeight, 0.0F, 1.0F, "%.2f");
+        ImGui::SliderFloat("Ridge sharpness", &torus.sharpness, 0.6F, 5.0F, "%.2f");
+        ImGui::SliderFloat("Ring radius", &torus.ringRadius, 0.80F, 1.30F, "%.2f");
+        ImGui::SliderFloat("Tube radius", &torus.tubeRadius, 0.20F, 0.48F, "%.2f");
+        ImGui::SliderInt("Points", &torus.pointCount, 2000, 60000);
+        ImGui::SliderFloat("Point radius (700px)", &torus.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &torus.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &torus.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &torus.tilt, -90.0F, 90.0F);
+        ImGui::ColorEdit3("Ridge color", torus.ridgeColor.data());
+        ImGui::ColorEdit3("Body color", torus.bodyColor.data());
+        if (ImGui::Button("Reset torus")) {
+            torus = RidgedTorusSettings{};
+        }
+    } else if (braid.geometryMode == 8) {
+        auto& vortex = state_.vortex;
+        ImGui::Checkbox("Pause", &vortex.paused);
+        ImGui::SliderFloat("Roll speed", &vortex.animationSpeed, 0.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Spin", &vortex.spin, -1.0F, 1.0F, "%.2f");
+        ImGui::SliderInt("Strands", &vortex.strands, 1, 9);
+        ImGui::SliderInt("Twist", &vortex.twist, -5, 5);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Strand positions each strand advances per lap of the ring.");
+        }
+        ImGui::SliderFloat("Twist wave", &vortex.twistWave, 0.0F, 2.5F, "%.2f");
+        ImGui::SliderFloat("Ring radius", &vortex.ringRadius, 0.80F, 1.30F, "%.2f");
+        ImGui::SliderFloat("Coil radius", &vortex.coilRadius, 0.25F, 0.65F, "%.2f");
+        ImGui::SliderFloat("Tube radius", &vortex.tubeRadius, 0.05F, 0.30F, "%.3f");
+        // Keep the hole open: strands must not cross the ring's axis.
+        vortex.coilRadius =
+            std::min(vortex.coilRadius, vortex.ringRadius - vortex.tubeRadius - 0.05F);
+        ImGui::SliderInt("Points along", &vortex.majorPointCount, 120, 720);
+        ImGui::SliderInt("Points around", &vortex.minorPointCount, 12, 64);
+        // Even column counts close the staggered sampling pattern without a seam.
+        vortex.minorPointCount += vortex.minorPointCount % 2;
+        ImGui::SliderFloat("Point radius (700px)", &vortex.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &vortex.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &vortex.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &vortex.tilt, -90.0F, 90.0F);
+        ImGui::ColorEdit3("Hole color", vortex.holeColor.data());
+        ImGui::ColorEdit3("Rim color", vortex.rimColor.data());
+        if (ImGui::Button("Reset vortex")) {
+            vortex = VortexSettings{};
+        }
+    } else if (braid.geometryMode == 7) {
+        auto& morph = state_.morph;
+        ImGui::Checkbox("Pause", &morph.paused);
+        ImGui::SliderFloat("Flow speed", &morph.animationSpeed, 0.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Morph speed", &morph.morphRate, 0.0F, 2.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Shape changes per lap of the material.");
+        }
+        ImGui::SliderFloat("Morph amount", &morph.morphAmount, 0.0F, 1.0F, "%.2f");
+        ImGui::SliderFloat("Spin", &morph.spin, -1.0F, 1.0F, "%.2f");
+        ImGui::SliderFloat("Size", &morph.size, 0.80F, 2.00F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Sets the area of the cloth, which every shape shares.");
+        }
+        ImGui::SliderFloat("Length", &morph.halfLength, 0.50F, 1.80F, "%.2f");
+        ImGui::SliderFloat("Hole", &morph.holeRatio, 0.25F, 0.75F, "%.2f");
+        ImGui::SliderFloat("Square corners", &morph.roundness, 2.0F, 8.0F, "%.1f");
+        ImGui::SliderInt("Color bands", &morph.bands, 1, 8);
+        ImGui::SliderInt("Points", &morph.pointCount, 2000, 60000);
+        ImGui::SliderFloat("Point radius (700px)", &morph.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &morph.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &morph.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &morph.tilt, -90.0F, 90.0F);
+        ImGui::ColorEdit3("First color", morph.firstColor.data());
+        ImGui::ColorEdit3("Second color", morph.secondColor.data());
+        if (ImGui::Button("Reset morph")) {
+            morph = MorphSettings{};
+        }
+    } else if (braid.geometryMode == 6) {
+        auto& sleeve = state_.sleeve;
+        ImGui::Checkbox("Pause", &sleeve.paused);
+        ImGui::SliderFloat("Flow speed", &sleeve.animationSpeed, 0.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Spin", &sleeve.spin, -1.0F, 1.0F, "%.2f");
+        ImGui::SliderFloat("Outer radius", &sleeve.outerRadius, 0.40F, 1.10F, "%.2f");
+        ImGui::SliderFloat("Length", &sleeve.halfLength, 0.0F, 1.40F, "%.2f");
+        ImGui::SliderFloat("Inner radius", &sleeve.innerRatio, 0.15F, 0.90F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Radius of the inner wall as a fraction of the outer one.");
+        }
+        ImGui::SliderInt("Color bands", &sleeve.bands, 1, 8);
+        ImGui::SliderInt("Points", &sleeve.pointCount, 2000, 60000);
+        ImGui::SliderFloat("Point radius (700px)", &sleeve.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &sleeve.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &sleeve.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &sleeve.tilt, -90.0F, 90.0F);
+        ImGui::ColorEdit3("First color", sleeve.firstColor.data());
+        ImGui::ColorEdit3("Second color", sleeve.secondColor.data());
+        if (ImGui::Button("Reset sleeve")) {
+            sleeve = SleeveSettings{};
+        }
+    } else if (braid.geometryMode == 5) {
+        auto& eversion = state_.eversion;
+        ImGui::Checkbox("Pause", &eversion.paused);
+        ImGui::SliderFloat("Eversion speed", &eversion.animationSpeed, 0.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("End hold", &eversion.endHold, 0.0F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("How long the two closed spheres linger before turning back.");
+        }
+        ImGui::SliderFloat("Spin", &eversion.spin, -1.0F, 1.0F, "%.2f");
+        ImGui::SliderFloat("Radius", &eversion.radius, 0.85F, 1.65F, "%.2f");
+        ImGui::SliderAngle("Hole radius", &eversion.holeAngle, 5.0F, 60.0F, "%.1f deg");
+        ImGui::SliderInt("Points", &eversion.pointCount, 2000, 60000);
+        ImGui::SliderFloat("Point radius (700px)", &eversion.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &eversion.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &eversion.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &eversion.tilt, -90.0F, 90.0F);
+        ImGui::ColorEdit3("Outer side", eversion.outerColor.data());
+        ImGui::ColorEdit3("Inner side", eversion.innerColor.data());
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Each side of the material keeps its color,\n"
+                              "so the sphere changes color once it is inside out.");
+        }
+        if (ImGui::Button("Reset eversion")) {
+            eversion = EversionSettings{};
+        }
+    } else if (braid.geometryMode == 4) {
         auto& spheres = state_.nestedSpheres;
         ImGui::Checkbox("Pause", &spheres.paused);
         ImGui::SliderFloat("Rotation speed", &spheres.animationSpeed, 0.0F, 1.5F, "%.2f");

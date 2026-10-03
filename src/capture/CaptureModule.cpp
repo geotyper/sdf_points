@@ -450,7 +450,7 @@ void CaptureModule::drawLoopSection() {
     ImGui::SeparatorText("Loop");
     auto& loop = state_.loop;
     const int geometry = state_.braid.geometryMode;
-    const bool autoRotate = geometry != 4 && state_.braid.autoRotate;
+    const bool autoRotate = geometry < 4 && state_.braid.autoRotate;
     if (!loopDriverAvailable(geometry, loop.driver, autoRotate)) {
         loop.driver = defaultLoopDriver(geometry);
     }

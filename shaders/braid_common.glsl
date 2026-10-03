@@ -8,6 +8,7 @@ layout(push_constant) uniform BraidPush {
     vec4 wave;       // release strength, angular width, travel speed, squircle exponent
     vec4 motion;     // whole-loop torsion, travelling compression, circulation, optional radius limit
     vec4 loop;       // x: loop length in 2*pi cycles of the flow phase (0 = free running)
+                     // z: closed point lattice step (0 = golden-angle spiral)
 } pc;
 
 const float TAU = 6.28318530718;
@@ -16,6 +17,7 @@ const int SURFACE_ROWS = 720;
 const int SURFACE_COLUMNS = 64;
 const int MAX_SPHERE_HOLES = 32;
 const int MAX_NESTED_SPHERES = 12;
+const int MORPH_SEGMENTS = 64;
 
 // Phase of a motion running `frequency` times as fast as the flow phase. In a
 // loop capture every frequency is rounded to a whole number of cycles over the
@@ -27,7 +29,27 @@ float timePhase(float frequency) {
 }
 
 bool nestedSphereMode() {
-    return pc.style.w > 3.5;
+    return pc.style.w > 3.5 && pc.style.w < 4.5;
+}
+
+bool eversionMode() {
+    return pc.style.w > 4.5 && pc.style.w < 5.5;
+}
+
+bool sleeveMode() {
+    return pc.style.w > 5.5 && pc.style.w < 6.5;
+}
+
+bool morphMode() {
+    return pc.style.w > 6.5 && pc.style.w < 7.5;
+}
+
+bool vortexMode() {
+    return pc.style.w > 7.5 && pc.style.w < 8.5;
+}
+
+bool ridgeMode() {
+    return pc.style.w > 8.5;
 }
 
 float hashScalar(float value) {
@@ -122,6 +144,343 @@ vec3 nestedSpherePoint(float longitude, float latitudeParameter, float sphere) {
     vec3 localDirection = localSphereDirection(longitude, latitudeParameter);
     return nestedSphereCenter(sphere)
          + nestedSphereRadius(sphere) * rotateSphereDirection(localDirection, sphere);
+}
+
+// Punctured sphere eversion reuses the push constants: shape = radius, hole
+// half-angle, end hold, spin; wave.rgb / motion.rgb = outer / inner side colour.
+//
+// The sphere is pulled through its own opening like a sock, pole first. A fold
+// circle climbs the still unturned sphere; the turned material runs from it as a
+// cone up to the opening and ends in a rounded tip, which swells into the
+// mirrored sphere once it is through. Every stage has the sphere's area, and a
+// point sits where the area between it and the pole stays what it was on the
+// sphere, so the cloth of points slides without stretching its area.
+float eversionProgress() {
+    float swing = cos(timePhase(1.0));
+    // Ease towards both ends so the closed spheres linger.
+    swing = mix(swing, swing * (1.5 - 0.5 * swing * swing), pc.shape.z);
+    return 0.5 - 0.5 * swing;
+}
+
+// Turned area left for a flat-topped tip once the cone's throat has advanced
+// this far from the fold (0) towards the opening (1), less a rounded tip's share.
+float eversionSpareArea(float turned, float foldRadius, float ring, float reach, float advance) {
+    const float tipRoundness = 0.6;
+    float throatRadius = mix(foldRadius, ring, advance);
+    return turned - (foldRadius + throatRadius) * advance * reach
+         - (1.0 + tipRoundness * tipRoundness) * throatRadius * throatRadius;
+}
+
+// Meridian section at the material's area fraction 0 (pole) .. 1 (rim of the
+// hole). xy: distance from the axis and height along it; zw: outer side normal.
+// Areas below are divided by pi.
+vec4 eversionProfile(float material) {
+    float radius = pc.shape.x;
+    float ring = radius * sin(pc.shape.y);
+    float centreDepth = radius * cos(pc.shape.y);
+    float total = 2.0 * radius * (radius + centreDepth);
+    float progress = eversionProgress();
+    float turned = progress * total;
+    // Sphere area grows linearly with height, and so does the fold.
+    vec2 fold;
+    fold.y = -(1.0 - progress) * (radius + centreDepth);
+    float foldOffset = fold.y + centreDepth;
+    fold.x = sqrt(max(radius * radius - foldOffset * foldOffset, 0.0));
+    // The cone's throat advances from the fold towards the opening as far as
+    // the turned area allows while keeping a rounded tip on top of it.
+    float reach = length(vec2(ring, 0.0) - fold);
+    float advance = 0.0;
+    if (eversionSpareArea(turned, fold.x, ring, reach, 1.0) >= 0.0) {
+        advance = 1.0;
+    } else if (eversionSpareArea(turned, fold.x, ring, reach, 0.0) > 0.0) {
+        float low = 0.0, high = 1.0;
+        for (int step = 0; step < 20; ++step) {
+            float middle = 0.5 * (low + high);
+            if (eversionSpareArea(turned, fold.x, ring, reach, middle) > 0.0) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        advance = 0.5 * (low + high);
+    }
+    vec2 throat = mix(fold, vec2(ring, 0.0), advance);
+    float coneLength = advance * reach;
+    float coneArea = (fold.x + throat.x) * coneLength;
+    // What is left after the cone forms the tip, a spherical cap on the throat.
+    float tipHeight = sqrt(max(turned - coneArea - throat.x * throat.x, 0.0));
+    float tipArea = throat.x * throat.x + tipHeight * tipHeight;
+
+    float area = material * total;
+    vec2 position, tangent;
+    if (area <= tipArea) {
+        float drop = area * tipHeight / max(tipArea, 1e-9);
+        position = vec2(sqrt(max(area - drop * drop, 0.0)), throat.y + tipHeight - drop);
+        tangent = vec2(tipArea - 2.0 * tipHeight * drop, -2.0 * tipHeight * position.x);
+    } else if (area <= tipArea + coneArea && coneLength > 1e-6) {
+        float along = (area - tipArea) / coneLength;
+        along /= throat.x + sqrt(throat.x * throat.x + (fold.x - throat.x) * along);
+        position = mix(throat, fold, along);
+        tangent = fold - throat;
+    } else {
+        float height = fold.y + (area - tipArea - coneArea) / (2.0 * radius) + centreDepth;
+        height = min(height, centreDepth);
+        position = vec2(sqrt(max(radius * radius - height * height, 0.0)), height - centreDepth);
+        tangent = vec2(-height, position.x);
+    }
+    tangent = dot(tangent, tangent) > 1e-12 ? normalize(tangent) : vec2(1.0, 0.0);
+    // Follow the cloth so the remaining sphere and the new one share the frame.
+    position.y -= 0.5 * (radius + centreDepth) * (progress * progress + progress - 1.0);
+    return vec4(position, tangent.y, -tangent.x);
+}
+
+vec3 eversionAround(float longitude, vec2 section) {
+    longitude += timePhase(pc.shape.w);
+    return vec3(section.x * cos(longitude), section.y, section.x * sin(longitude));
+}
+
+vec3 eversionPoint(float longitude, float material) {
+    return eversionAround(longitude, eversionProfile(material).xy);
+}
+
+vec3 eversionNormal(float longitude, float material) {
+    return eversionAround(longitude, eversionProfile(material).zw);
+}
+
+float eversionSpan() {
+    // Largest distance from the origin over all stages and hole sizes, in radii.
+    return pc.shape.x * 1.25 * 1.10;
+}
+
+// Everting sleeve reuses the push constants: shape = outer radius, half length
+// of the straight walls, inner / outer radius ratio, colour bands; wave.rgb /
+// motion.rgb = the two band colours, wave.w = spin.
+//
+// A tube of cloth folded back into itself: the material climbs the inner wall,
+// rolls outwards over the top lip, descends the outer wall and is swallowed at
+// the bottom lip, so it turns inside out without end. Points are spaced by area
+// along this track and therefore keep their density on both walls.
+// xy: distance from the axis and height along it; zw: normal away from the walls' gap.
+vec4 sleeveProfile(float material) {
+    float outer = pc.shape.x, inner = outer * pc.shape.z, straight = pc.shape.y;
+    float centre = 0.5 * (outer + inner), lip = 0.5 * (outer - inner);
+    float wall = 2.0 * straight;
+    // Areas are divided by 2*pi.
+    float lipArea = PI * lip * centre;
+    float total = (inner + outer) * wall + 2.0 * lipArea;
+    float area = fract(material + timePhase(1.0) / TAU) * total;
+    if (area < inner * wall) {
+        return vec4(inner, area / inner - straight, -1.0, 0.0);
+    }
+    area -= inner * wall;
+    bool top = area < lipArea;
+    if (!top) {
+        area -= lipArea;
+        if (area < outer * wall) {
+            return vec4(outer, straight - area / outer, 1.0, 0.0);
+        }
+        area -= outer * wall;
+    }
+    // Half a torus: its radius shrinks towards the axis, so the angle swept by
+    // a given area has no closed form. Newton converges in a few steps.
+    float side = top ? -1.0 : 1.0;
+    float angle = area / (lip * centre);
+    for (int step = 0; step < 4; ++step) {
+        angle -= (lip * (centre * angle + side * lip * sin(angle)) - area)
+               / (lip * (centre + side * lip * cos(angle)));
+    }
+    vec2 around = vec2(side * cos(angle), -side * sin(angle));
+    return vec4(centre + lip * around.x, -side * straight + lip * around.y, around);
+}
+
+vec3 sleeveAround(float longitude, vec2 section) {
+    longitude += timePhase(pc.wave.w);
+    return vec3(section.x * cos(longitude), section.y, section.x * sin(longitude));
+}
+
+vec3 sleevePoint(float longitude, float material) {
+    return sleeveAround(longitude, sleeveProfile(material).xy);
+}
+
+vec3 sleeveNormal(float longitude, float material) {
+    return sleeveAround(longitude, sleeveProfile(material).zw);
+}
+
+float sleeveSpan() {
+    float lip = 0.5 * pc.shape.x * (1.0 - pc.shape.z);
+    return length(vec2(pc.shape.x, pc.shape.y + lip)) * 1.10;
+}
+
+// Morphing sleeve reuses the push constants: shape = size, hole ratio, corner
+// roundness, colour bands; points.y = half length; look.w = morph amount;
+// wave = first colour and spin; motion = second colour and morph rate.
+//
+// The sleeve's section becomes a superellipse around the tube of cloth, and
+// four slow waves reshape it while the material keeps flowing: the length
+// stretches, the corners round off towards a torus, the walls flare into a cup
+// one way and the other, and the waist pinches or bulges.
+// size: half thickness, half length, superellipse exponent; bend: flare, waist.
+void morphShape(out vec3 size, out vec2 bend) {
+    float rate = pc.motion.w, amount = pc.look.w, hole = pc.shape.y;
+    size.x = 0.5 * (1.0 - hole);
+    size.y = max(pc.points.y * (1.0 + 0.4 * amount * sin(timePhase(rate))), size.x);
+    float corners = 2.0 + (pc.shape.z - 2.0)
+                  * (1.0 - amount * (0.5 + 0.5 * sin(timePhase(2.0 * rate) + 1.0)));
+    size.z = corners;
+    // The flare stops short of closing the hole at either end.
+    bend.x = 0.8 * hole * amount * sin(timePhase(rate) + 1.9);
+    bend.y = 0.35 * amount * sin(timePhase(3.0 * rate) + 0.6);
+}
+
+// Section point after `turn` laps of the track, in units of the outer radius.
+// The track runs down the outer wall and back up the inner one.
+vec2 morphCurve(float turn, vec3 size, vec2 bend) {
+    float angle = -TAU * turn;
+    vec2 direction = vec2(cos(angle), sin(angle));
+    // Polar form of the superellipse: its speed stays finite along the walls,
+    // so equal steps of the lap never leave a long stretch unsampled.
+    vec2 powers = pow(abs(direction), vec2(size.z));
+    vec2 corner = direction / pow(powers.x + powers.y, 1.0 / size.z);
+    float radius = 0.5 * (1.0 + pc.shape.y) + size.x * corner.x + bend.x * corner.y;
+    return vec2(radius * (1.0 - bend.y * (1.0 - corner.y * corner.y)), size.y * corner.y);
+}
+
+// xy: distance from the axis and height along it; zw: normal away from the
+// walls' gap. With byArea the material coordinate is an area fraction carried
+// by the flow, which keeps the points' density; otherwise it is the lap itself.
+vec4 morphProfile(float material, bool byArea) {
+    vec3 size;
+    vec2 bend;
+    morphShape(size, bend);
+    // Areas are divided by 2*pi and measured on the polygon through the samples.
+    float total = 0.0;
+    vec2 previous = morphCurve(0.0, size, bend);
+    for (int segment = 1; segment <= MORPH_SEGMENTS; ++segment) {
+        vec2 current = morphCurve(float(segment) / float(MORPH_SEGMENTS), size, bend);
+        total += 0.5 * (previous.x + current.x) * distance(previous, current);
+        previous = current;
+    }
+    float turn = material;
+    if (byArea) {
+        float area = fract(material + timePhase(1.0) / TAU) * total;
+        turn = 1.0;
+        previous = morphCurve(0.0, size, bend);
+        for (int segment = 1; segment <= MORPH_SEGMENTS; ++segment) {
+            vec2 current = morphCurve(float(segment) / float(MORPH_SEGMENTS), size, bend);
+            float piece = 0.5 * (previous.x + current.x) * distance(previous, current);
+            if (area <= piece) {
+                turn = (float(segment - 1) + area / max(piece, 1e-9)) / float(MORPH_SEGMENTS);
+                break;
+            }
+            area -= piece;
+            previous = current;
+        }
+    }
+    // Every shape is scaled to the same area, so the cloth neither grows nor shrinks.
+    float scale = pc.shape.x / sqrt(total);
+    vec2 tangent = morphCurve(turn + 0.002, size, bend) - morphCurve(turn - 0.002, size, bend);
+    vec2 normal = dot(tangent, tangent) > 1e-14 ? normalize(vec2(-tangent.y, tangent.x))
+                                                : vec2(1.0, 0.0);
+    return vec4(scale * morphCurve(turn, size, bend), normal);
+}
+
+float morphSpan() {
+    // Largest extent over all morph phases and slider settings, per unit of size.
+    return pc.shape.x * mix(0.88, 1.14, pc.look.w) * 1.08;
+}
+
+// Vortex ring reuses the push constants: shape = ring radius, coil radius, tube
+// radius, twist; points = samples along, samples around, pixel radius, strands;
+// look.w = twist wave; wave = hole colour and spin; motion = rim colour.
+//
+// Strands wound around an unseen torus that rolls through its own hole without
+// end. The roll carries them inwards over the top: they dive into the hole
+// together, fan out underneath and climb back over the rim, while a torsion
+// wave runs around the ring and wrings them.
+
+// Angle around the torus' tube that has this share of its area behind it.
+// Strands spaced by area keep their distance on the way through the hole.
+float vortexAngle(float fraction) {
+    float angle = TAU * fraction;
+    for (int step = 0; step < 4; ++step) {
+        angle -= (pc.shape.x * (angle - TAU * fraction) + pc.shape.y * sin(angle))
+               / (pc.shape.x + pc.shape.y * cos(angle));
+    }
+    return angle;
+}
+
+// Where the strand's centreline sits around the tube at this place on the ring.
+float vortexStrandAngle(float u, float strand) {
+    float winding = (pc.shape.w * u + pc.look.w * sin(u - timePhase(1.0))) / TAU;
+    return vortexAngle(fract((strand + winding) / pc.points.w + timePhase(1.0) / TAU));
+}
+
+vec3 vortexCentre(float u, float strand) {
+    float angle = vortexStrandAngle(u, strand);
+    return sleeveAround(u, vec2(pc.shape.x + pc.shape.y * cos(angle), pc.shape.y * sin(angle)));
+}
+
+void vortexFrame(float u, float strand, out vec3 center, out vec3 tangent,
+                 out vec3 x, out vec3 y, out float radius) {
+    center = vortexCentre(u, strand);
+    tangent = normalize(vortexCentre(u + 0.001, strand) - vortexCentre(u - 0.001, strand));
+    float angle = vortexStrandAngle(u, strand);
+    vec3 reference = sleeveAround(u, vec2(cos(angle), sin(angle)));
+    x = normalize(reference - tangent * dot(reference, tangent));
+    y = cross(tangent, x);
+    // Strands thin a little where the ring crowds them into the hole.
+    float crowding = (pc.shape.x + pc.shape.y * cos(angle)) / pc.shape.x;
+    radius = pc.shape.z * mix(1.0, crowding, 0.5);
+}
+
+float vortexSpan() {
+    return (pc.shape.x + pc.shape.y + pc.shape.z * 1.25) * 1.10;
+}
+
+// Ridged torus reuses the push constants: shape = ring radius, tube radius, ridge
+// height, ridge count; points.y = twist, points.w = ridge sharpness; look.w =
+// twist wave; wave = ridge colour and spin; motion = body colour and pulse
+// rate; loop.y = pulse depth.
+//
+// A torus of cloth rolls through its own hole without end. Ridges rise out of
+// it, each winding around the ring, and are carried by the roll: they dive into
+// the hole together, fan out underneath and climb back over the rim. A torsion
+// wave runs around the ring and wrings them, and with a full pulse they sink
+// back into the plain torus once per pulse cycle.
+float ridgeGrowth() {
+    return 1.0 - pc.loop.y * (0.5 + 0.5 * cos(timePhase(pc.motion.w)));
+}
+
+// Share of the plain torus' area between the outer equator and this angle
+// around the tube; points spaced by it keep their density through the hole.
+float ridgeFraction(float angle) {
+    return (pc.shape.x * angle + pc.shape.y * sin(angle)) / (pc.shape.x * TAU);
+}
+
+// Ridges belong to the material: 0 in the valleys, 1 on the crests.
+float ridgeCrest(float longitude, float material) {
+    float phase = TAU * pc.shape.w * material - pc.points.y * longitude
+                - pc.look.w * sin(longitude - timePhase(1.0));
+    return pow(max(0.5 + 0.5 * cos(phase), 0.0), pc.points.w);
+}
+
+vec3 ridgePoint(float longitude, float angle) {
+    float material = fract(ridgeFraction(angle) - timePhase(1.0) / TAU);
+    float growth = pc.shape.z * ridgeGrowth();
+    // The body thins as the ridges rise from it.
+    float radius = pc.shape.y
+                 * (1.0 - 0.45 * growth + growth * ridgeCrest(longitude, material));
+    return sleeveAround(longitude, vec2(pc.shape.x + radius * cos(angle), radius * sin(angle)));
+}
+
+vec3 ridgeNormal(float longitude, float angle) {
+    vec3 around = ridgePoint(longitude, angle + 0.002) - ridgePoint(longitude, angle - 0.002);
+    vec3 along = ridgePoint(longitude + 0.002, angle) - ridgePoint(longitude - 0.002, angle);
+    return normalize(cross(around, along));
+}
+
+float ridgeSpan() {
+    return (pc.shape.x + pc.shape.y * (1.0 + 0.55 * pc.shape.z)) * 1.10;
 }
 
 float releaseEnvelope(float u) {
@@ -251,6 +610,10 @@ void deformCurveFrame(inout vec3 center, inout vec3 derivative, inout vec3 refer
 
 void tubeFrame(float u, float strand, out vec3 center, out vec3 tangent,
                out vec3 x, out vec3 y, out float radius) {
+    if (vortexMode()) {
+        vortexFrame(u, strand, center, tangent, x, y, radius);
+        return;
+    }
     bool torsionLoop = pc.style.w > 1.5 && pc.style.w < 2.5;
     // Material coordinates remain permanent: advect the whole tube frame and
     // its attached points together along the rounded-square guide.
@@ -276,6 +639,19 @@ void tubeFrame(float u, float strand, out vec3 center, out vec3 tangent,
 vec3 surfacePoint(float u, float v, float strand) {
     if (nestedSphereMode()) {
         return nestedSpherePoint(u, v, strand);
+    }
+    if (eversionMode()) {
+        // The long grid axis follows the meridian, where the folds are.
+        return eversionPoint(v, u / TAU);
+    }
+    if (sleeveMode()) {
+        return sleevePoint(v, u / TAU);
+    }
+    if (morphMode()) {
+        return sleeveAround(v, morphProfile(u / TAU, false).xy);
+    }
+    if (ridgeMode()) {
+        return ridgePoint(v, u);
     }
     vec3 center, tangent, x, y;
     float radius;
@@ -328,6 +704,21 @@ vec4 projectPoint(vec3 p) {
     }
     if (nestedSphereMode()) {
         span = nestedSphereSpan();
+    }
+    if (eversionMode()) {
+        span = eversionSpan();
+    }
+    if (sleeveMode()) {
+        span = sleeveSpan();
+    }
+    if (morphMode()) {
+        span = morphSpan();
+    }
+    if (vortexMode()) {
+        span = vortexSpan();
+    }
+    if (ridgeMode()) {
+        span = ridgeSpan();
     }
     vec2 scale = min(pc.view.x, pc.view.y) / pc.view.xy;
     return vec4(p.xy * vec2(1.0, -1.0) * scale / span, (4.0 - p.z) / 8.0, 1.0);

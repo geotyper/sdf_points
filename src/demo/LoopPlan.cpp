@@ -25,7 +25,7 @@ bool loopDriverAvailable(const int geometryMode, const LoopDriver driver, const 
     case LoopDriver::Flow:
         return true;
     case LoopDriver::Rotation:
-        return geometryMode != 4 && autoRotate;
+        return geometryMode < 4 && autoRotate;
     }
     return false;
 }
@@ -41,6 +41,15 @@ std::string_view loopDriverLabel(const int geometryMode, const LoopDriver driver
     case LoopDriver::Flow:
         if (geometryMode == 4) {
             return "Sphere turns";
+        }
+        if (geometryMode == 5) {
+            return "Eversion cycles";
+        }
+        if (geometryMode >= 8) {
+            return "Ring rolls";
+        }
+        if (geometryMode >= 6) {
+            return "Sleeve laps";
         }
         return geometryMode == 3 ? "Orbit cycles" : "Braid cycles";
     case LoopDriver::Rotation:
@@ -65,7 +74,7 @@ LoopPlan planLoop(const LoopInputs& inputs) {
     }
 
     const double cycles = static_cast<double>(inputs.cycles);
-    const bool rotates = inputs.geometryMode != 4 && inputs.autoRotate;
+    const bool rotates = inputs.geometryMode < 4 && inputs.autoRotate;
     // Object rotation measured per unit of flow phase.
     const double rotationRate = rotates ? inputs.rotationSpeed / inputs.animationSpeed : 0.0;
     double phaseCycles = cycles;

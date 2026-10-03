@@ -23,6 +23,7 @@ private:
 
     void createRenderTarget(AppContext& context, VkExtent2D extent);
     void destroyRenderTarget();
+    [[nodiscard]] float latticeStep(int pointCount);
 
     DemoState& state_;
     ProfileMetricId metric_{invalidProfileMetric};
@@ -40,6 +41,9 @@ private:
     float weaveTime_{};
     float rotationTime_{};
     float nestedSphereTime_{};
+    float eversionTime_{};
+    int latticeCount_{};
+    int latticeStep_{};
     float loopCycles_{};
 };
 

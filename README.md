@@ -62,6 +62,59 @@ at high values, partly beyond the outer shell.
 The depth-based visibility is two-sided, allowing rear-side points to appear through
 openings when they are not covered by another shell.
 
+**Punctured sphere** opens the **Eversion** group of **Geometry**: a point-cloud
+sphere with one circular opening that is pulled inside out through it like a sock.
+The pole opposite the opening dimples in, a fold circle climbs the still unturned
+sphere, and the turned material runs from the fold as a cone up to the opening, where
+its rounded tip emerges and swells into the mirrored sphere. The opening keeps its
+size, the surface keeps its area at every stage, and each point stays at the same
+area fraction from the pole, so the cloud slides like cloth instead of stretching.
+The two sides of the material have their own colors, so the sphere changes color
+once it is inside out. Launch it with `--preset punctured-sphere`. Controls cover
+eversion speed, how long the closed spheres linger, spin about the axis, radius,
+opening size, point count and appearance, tilt and the two side colors. One loop
+cycle is an eversion and back.
+
+**Sleeve**, the second **Eversion** geometry, is a tube of cloth folded back into
+itself that turns inside out without end: the material climbs the inner wall, rolls
+outwards over the top lip, descends the outer wall and is swallowed at the bottom lip.
+Points are spaced by area along this track, so their density stays the same on both
+walls and around the lips. The material is painted in alternating bands of two colors;
+with one pair of bands the outside changes color completely every half lap. Launch it
+with `--preset sleeve`. Controls cover flow speed, spin, outer radius, length, inner
+radius, band count, point count and appearance, tilt and the two colors. One loop
+cycle is a whole lap of the material.
+
+**Morphing sleeve** keeps the same endless flow but lets the sleeve change shape
+while the material runs through it. Its section is a superellipse reshaped by four
+slow waves: the length stretches, the corners round off towards a torus, the walls
+flare into a cup one way and then the other, and the waist pinches or bulges. Every
+shape is scaled to the same area and the points are spaced by area along the section,
+so the cloth neither grows nor thins as it morphs. Launch it with
+`--preset morphing-sleeve`. **Morph amount** at zero gives a static shape set by
+**Length**, **Hole** and **Square corners**; **Morph speed** counts shape changes per
+lap, and in a loop it is rounded to whole changes over the loop like every other motion.
+
+**Vortex ring** is a set of strands wound around an unseen torus that rolls through
+its own hole without end, like a smoke ring. The roll carries the strands inwards over
+the top: they dive into the hole together, fan out underneath and climb back over the
+rim. A torsion wave travels around the ring and wrings them. Strands are spaced by the
+torus' area, so they keep their distance in the hole, where they also thin a little,
+and they shade from the rim color to the hole color on the way in. Launch it with
+`--preset vortex-ring`. Controls cover roll speed, spin, strand count, twist, twist
+wave, ring, coil and tube radius, point counts and appearance, tilt and the two colors.
+
+**Ridged torus** is the same rolling ring as one sheet of cloth: a torus whose surface
+raises ridges that wind around the ring and are carried by the roll into the hole and
+back over the rim. A torsion wave travels around the ring and wrings them. Points are
+spaced by the area of the plain torus, so their density holds through the hole, and
+the ridges take their own color as they rise from the body. **Pulse depth** sets how
+far the ridges sink back between pulses: at 0, the default, they stay at full height,
+at 1 the figure returns to the plain torus once per pulse. Launch it with
+`--preset ridged-torus`. Controls cover roll speed, pulse depth and speed, spin, ridge
+count, twist, twist wave, ridge height and sharpness, ring and tube radius, point
+count and appearance, tilt and the two colors.
+
 Point visibility is evaluated per fragment against the hidden perforated depth shell.
 At silhouettes and opening boundaries, only the covered part of a circular sprite is
 removed instead of making the entire point disappear when its center becomes hidden.

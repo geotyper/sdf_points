@@ -29,7 +29,8 @@ void printHelp(const char* executable) {
               << "  --capture-frames N              record N frames at startup, then exit\n"
               << "  --capture-loop N                record a seamless loop of N cycles, then exit\n"
               << "  --loop-driver wave|flow|rotation  what the N cycles count (default: wave,\n"
-              << "                                  or flow for orbital bloom / nested spheres)\n"
+              << "                                  or flow for orbital bloom / nested spheres /\n"
+              << "                                  eversion)\n"
               << "  --screenshot                    save one PNG at startup, then exit\n";
 }
 

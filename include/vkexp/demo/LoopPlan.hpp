@@ -13,7 +13,7 @@ namespace vkexp {
 
 enum class LoopDriver {
     Wave,     // the travelling wave / pulse goes round the ring (braid geometries 0..2)
-    Flow,     // the braid / orbit phase, or the reference sphere turn (nested spheres)
+    Flow,     // the braid / orbit phase, a sphere turn, an eversion and back, or a sleeve lap
     Rotation, // the whole object turns (Auto rotate)
 };
 

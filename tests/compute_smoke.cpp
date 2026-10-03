@@ -173,9 +173,9 @@ void runBraidPeriodicity(vkexp::HeadlessComputeContext& context) {
     const auto pipeline = vkexp::ComputePipelineBuilder{context.physicalDevice(), context.device()}
                               .shader(VKEXP_SHADER_DIR "/braid_geometry_probe.comp.spv")
                               .addDescriptorSetLayout(layout.get())
-                              .addPushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 28 * sizeof(float))
+                              .addPushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 32 * sizeof(float))
                               .build();
-    std::array<float, 28> settings{700,   700,   0,     0,     1.23F, 0.38F, 0.195F, 3, 360, 40,
+    std::array<float, 32> settings{700,   700,   0,     0,     1.23F, 0.38F, 0.195F, 3, 360, 40,
                                    1.65F, 3,     0.10F, 0.15F, 1.15F, 0.36F, 0,      0, 0,   0,
                                    0.78F, 0.65F, 1.15F, 4,     0.85F, 0.85F, 0.18F,  0};
     auto sample = [&]() {
@@ -241,6 +241,203 @@ void runBraidPeriodicity(vkexp::HeadlessComputeContext& context) {
                 }
             }
         }
+    }
+
+    // Punctured sphere eversion: half a cycle later every material point must sit
+    // mirrored across the equatorial plane, and the cloth must keep its area and
+    // stay inside the projection bound while it is pulled through the hole.
+    constexpr float radius = 1.25F;
+    constexpr float holeAngle = 0.35F;
+    constexpr float pi = 3.14159265359F;
+    settings[19] = 5.0F;
+    settings[4] = radius;
+    settings[5] = holeAngle;
+    settings[6] = 0.6F; // end hold
+    settings[7] = 0.0F; // spin
+    settings[2] = 0.0F;
+    const auto closed = sample();
+    settings[2] = pi;
+    const auto everted = sample();
+    for (std::size_t value = 0; value < floatCount; value += 8) {
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            const float mirrored = axis == 1 ? -closed[value + axis] : closed[value + axis];
+            if (!(std::abs(everted[value + axis] - mirrored) < 0.001F)) {
+                throw std::runtime_error("Eversion does not mirror the punctured sphere");
+            }
+        }
+    }
+    // The probe samples 64 area fractions k/64 along the meridian at longitude 0.
+    const float sampledArea = 2.0F * radius * radius * (1.0F + std::cos(holeAngle)) * 63.0F / 64.0F;
+    for (float phase : {0.0F, 0.7F, 1.2F, 1.5F, 1.7F, 2.0F, 2.6F, pi}) {
+        settings[2] = phase;
+        const auto cloth = sample();
+        float area = 0.0F;
+        for (std::size_t ring = 0; ring < 64; ++ring) {
+            const std::size_t at = ring * 16 * 8;
+            if (!(std::hypot(cloth[at], cloth[at + 1]) < radius * 1.251F)) {
+                throw std::runtime_error("Eversion leaves its projection bound");
+            }
+            if (ring + 1 < 64) {
+                const std::size_t next = at + 16 * 8;
+                area += (cloth[at] + cloth[next]) *
+                        std::hypot(cloth[next] - cloth[at], cloth[next + 1] - cloth[at + 1]);
+            }
+        }
+        if (!(std::abs(area / sampledArea - 1.0F) < 0.03F)) {
+            throw std::runtime_error("Eversion changes the area of the cloth (phase " +
+                                     std::to_string(phase) + ", ratio " +
+                                     std::to_string(area / sampledArea) + ")");
+        }
+    }
+
+    // Everting sleeve: the cloth keeps its area on both walls and around the lips
+    // while it flows, and returns to its start after a whole lap.
+    constexpr float outer = 0.72F;
+    constexpr float halfLength = 0.80F;
+    constexpr float innerRatio = 0.55F;
+    settings[19] = 6.0F;
+    settings[4] = outer;
+    settings[5] = halfLength;
+    settings[6] = innerRatio;
+    settings[23] = 0.0F; // spin
+    const float centre = 0.5F * outer * (1.0F + innerRatio);
+    const float lip = 0.5F * outer * (1.0F - innerRatio);
+    const float sleeveArea = 2.0F * centre * (2.0F * halfLength + pi * lip);
+    settings[2] = 0.0F;
+    const auto lapStart = sample();
+    settings[2] = 2.0F * pi;
+    const auto lapEnd = sample();
+    for (std::size_t value = 0; value < floatCount; value += 8) {
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            if (!(std::abs(lapEnd[value + axis] - lapStart[value + axis]) < 0.001F)) {
+                throw std::runtime_error("Sleeve does not return after a whole lap");
+            }
+        }
+    }
+    for (float phase : {0.0F, 0.9F, 2.4F, 4.1F}) {
+        settings[2] = phase;
+        const auto cloth = sample();
+        float area = 0.0F;
+        for (std::size_t ring = 0; ring < 64; ++ring) {
+            const std::size_t at = ring * 16 * 8;
+            const std::size_t next = ((ring + 1) % 64) * 16 * 8;
+            const float step =
+                std::hypot(cloth[next] - cloth[at], cloth[next + 1] - cloth[at + 1]);
+            area += (cloth[at] + cloth[next]) * step;
+        }
+        if (!(std::abs(area / (2.0F * sleeveArea) - 1.0F) < 0.03F)) {
+            throw std::runtime_error("Sleeve changes the area of the cloth (ratio " +
+                                     std::to_string(area / (2.0F * sleeveArea)) + ")");
+        }
+    }
+
+    // Morphing sleeve: whatever the shape, the cloth keeps the area set by its size
+    // and stays inside the projection bound.
+    constexpr float size = 1.45F;
+    settings[19] = 7.0F;
+    settings[4] = size;
+    settings[5] = 0.55F;  // hole ratio
+    settings[6] = 6.0F;   // corner squareness
+    settings[9] = 1.20F;  // half length
+    settings[15] = 1.0F;  // morph amount
+    settings[27] = 0.50F; // morph rate
+    for (float phase : {0.0F, 1.1F, 2.9F, 4.4F, 7.3F, 10.6F}) {
+        settings[2] = phase;
+        const auto cloth = sample();
+        float area = 0.0F;
+        for (std::size_t ring = 0; ring < 64; ++ring) {
+            const std::size_t at = ring * 16 * 8;
+            const std::size_t next = ((ring + 1) % 64) * 16 * 8;
+            if (!(cloth[at] > 0.0F) || !(std::hypot(cloth[at], cloth[at + 1]) < size * 1.14F)) {
+                throw std::runtime_error("Morphing sleeve leaves its projection bound");
+            }
+            area += (cloth[at] + cloth[next]) *
+                    std::hypot(cloth[next] - cloth[at], cloth[next + 1] - cloth[at + 1]);
+        }
+        if (!(std::abs(area / (2.0F * size * size) - 1.0F) < 0.005F)) {
+            throw std::runtime_error("Morphing sleeve changes the area of the cloth (ratio " +
+                                     std::to_string(area / (2.0F * size * size)) + ")");
+        }
+    }
+
+    // Vortex ring: strands keep a circular section on the coil around the ring,
+    // thin only towards the hole, and one roll brings every point back.
+    constexpr float ringRadius = 0.95F;
+    constexpr float coilRadius = 0.48F;
+    constexpr float strandRadius = 0.17F;
+    settings[19] = 8.0F;
+    settings[4] = ringRadius;
+    settings[5] = coilRadius;
+    settings[6] = strandRadius;
+    settings[7] = 2.0F;  // twist
+    settings[11] = 5.0F; // strands
+    settings[15] = 0.7F; // twist wave
+    settings[23] = 0.0F; // spin
+    settings[2] = 0.0F;
+    const auto rollStart = sample();
+    settings[2] = 2.0F * pi;
+    const auto rollEnd = sample();
+    for (float phase : {0.0F, 1.3F, 3.7F, 5.2F}) {
+        settings[2] = phase;
+        const auto strands = sample();
+        for (std::size_t value = 0; value < floatCount; value += 8) {
+            const float coilDistance = std::hypot(
+                std::hypot(strands[value], strands[value + 2]) - ringRadius, strands[value + 1]);
+            const float radius = strands[value + 3];
+            if (!(strands[value + 7] < 0.0001F) || !(radius < strandRadius * 1.26F) ||
+                !(radius > strandRadius * 0.74F) || !(coilDistance < coilRadius + radius + 0.001F) ||
+                !(coilDistance > coilRadius - radius - 0.001F)) {
+                throw std::runtime_error("Vortex ring strand leaves its coil or loses its section");
+            }
+        }
+    }
+    for (std::size_t value = 0; value < floatCount; value += 8) {
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            if (!(std::abs(rollEnd[value + axis] - rollStart[value + axis]) < 0.002F)) {
+                throw std::runtime_error("Vortex ring does not return after one roll");
+            }
+        }
+    }
+
+    // Ridged torus: with a full pulse it starts as a plain torus, its ridges stay
+    // between the thinned body and the crest height, and one roll brings every
+    // point back.
+    constexpr float bodyRadius = 0.40F;
+    settings[19] = 9.0F;
+    settings[5] = bodyRadius;
+    settings[6] = 1.0F;  // ridge height
+    settings[7] = 5.0F;  // ridges
+    settings[9] = 2.0F;  // twist
+    settings[11] = 1.6F; // ridge sharpness
+    settings[27] = 1.0F; // pulse rate
+    settings[29] = 1.0F; // pulse depth
+    const auto bodyDistance = [&](const std::array<float, floatCount>& cloth, const std::size_t at) {
+        return std::hypot(std::hypot(cloth[at], cloth[at + 2]) - ringRadius, cloth[at + 1]);
+    };
+    settings[2] = 0.0F;
+    const auto plain = sample();
+    settings[2] = 2.0F * pi;
+    const auto rolled = sample();
+    settings[2] = pi;
+    const auto ridged = sample();
+    bool crestSeen = false;
+    for (std::size_t value = 0; value < floatCount; value += 8) {
+        if (!(std::abs(bodyDistance(plain, value) - bodyRadius) < 0.001F)) {
+            throw std::runtime_error("Ridged torus does not start as a plain torus");
+        }
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            if (!(std::abs(rolled[value + axis] - plain[value + axis]) < 0.002F)) {
+                throw std::runtime_error("Ridged torus does not return after one roll");
+            }
+        }
+        const float distance = bodyDistance(ridged, value);
+        if (!(distance > bodyRadius * 0.549F) || !(distance < bodyRadius * 1.551F)) {
+            throw std::runtime_error("Ridged torus ridges leave their height range");
+        }
+        crestSeen = crestSeen || distance > bodyRadius * 1.3F;
+    }
+    if (!crestSeen) {
+        throw std::runtime_error("Ridged torus raises no ridges at mid pulse");
     }
 }
 

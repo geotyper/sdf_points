@@ -35,7 +35,7 @@ struct ComputeOutput {
 };
 
 struct BraidSettings {
-    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres
+    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus
     bool paused{};
     bool autoRotate{false};
     bool limitTubeOverlap{false};
@@ -82,6 +82,101 @@ struct NestedSphereSettings {
     int directionSeed{1};
 };
 
+struct EversionSettings {
+    bool paused{};
+    float animationSpeed{0.50F};
+    float endHold{0.60F};
+    float spin{0.15F};
+    float radius{1.25F};
+    float holeAngle{0.35F};
+    float pointSize{1.45F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.45F};
+    int pointCount{16000};
+    std::array<float, 3> outerColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> innerColor{0.14F, 0.58F, 1.00F};
+};
+
+struct SleeveSettings {
+    bool paused{};
+    float animationSpeed{0.35F};
+    float spin{0.0F};
+    float outerRadius{0.72F};
+    float halfLength{0.80F};
+    float innerRatio{0.55F};
+    float pointSize{1.45F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.50F};
+    int bands{1};
+    int pointCount{24000};
+    std::array<float, 3> firstColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> secondColor{0.14F, 0.58F, 1.00F};
+};
+
+struct MorphSettings {
+    bool paused{};
+    float animationSpeed{0.35F};
+    float morphRate{0.50F};
+    float morphAmount{1.0F};
+    float spin{0.0F};
+    float size{1.45F};
+    float halfLength{1.20F};
+    float holeRatio{0.55F};
+    float roundness{6.0F};
+    float pointSize{1.45F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.50F};
+    int bands{2};
+    int pointCount{24000};
+    std::array<float, 3> firstColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> secondColor{0.14F, 0.58F, 1.00F};
+};
+
+struct VortexSettings {
+    bool paused{};
+    float animationSpeed{0.30F};
+    float spin{0.0F};
+    float ringRadius{0.95F};
+    float coilRadius{0.48F};
+    float tubeRadius{0.14F};
+    float twistWave{0.0F};
+    float pointSize{1.55F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.85F};
+    int strands{6};
+    int twist{6};
+    int majorPointCount{300};
+    int minorPointCount{26};
+    std::array<float, 3> holeColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> rimColor{0.14F, 0.58F, 1.00F};
+};
+
+struct RidgedTorusSettings {
+    bool paused{};
+    float animationSpeed{0.30F};
+    float pulseRate{1.0F};
+    float pulseDepth{0.0F};
+    float spin{0.0F};
+    float ringRadius{0.95F};
+    float tubeRadius{0.40F};
+    float ridgeHeight{1.0F};
+    float sharpness{1.6F};
+    float twistWave{0.7F};
+    float pointSize{1.45F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.85F};
+    int ridges{5};
+    int twist{2};
+    int pointCount{32000};
+    std::array<float, 3> ridgeColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> bodyColor{0.14F, 0.58F, 1.00F};
+};
+
 struct StrandPalette {
     bool enabled{false};
     std::array<std::array<float, 3>, 5> colors{{
@@ -118,6 +213,11 @@ struct DemoState {
     ComputeOutput blur;
     BraidSettings braid;
     NestedSphereSettings nestedSpheres;
+    EversionSettings eversion;
+    SleeveSettings sleeve;
+    MorphSettings morph;
+    VortexSettings vortex;
+    RidgedTorusSettings ridgedTorus;
     StrandPalette palette;
     LoopSettings loop;
 };
@@ -130,6 +230,21 @@ struct DemoState {
     if (state.braid.geometryMode == 4) {
         inputs.paused = state.nestedSpheres.paused;
         inputs.animationSpeed = state.nestedSpheres.animationSpeed;
+    } else if (state.braid.geometryMode == 5) {
+        inputs.paused = state.eversion.paused;
+        inputs.animationSpeed = state.eversion.animationSpeed;
+    } else if (state.braid.geometryMode == 6) {
+        inputs.paused = state.sleeve.paused;
+        inputs.animationSpeed = state.sleeve.animationSpeed;
+    } else if (state.braid.geometryMode == 7) {
+        inputs.paused = state.morph.paused;
+        inputs.animationSpeed = state.morph.animationSpeed;
+    } else if (state.braid.geometryMode == 8) {
+        inputs.paused = state.vortex.paused;
+        inputs.animationSpeed = state.vortex.animationSpeed;
+    } else if (state.braid.geometryMode == 9) {
+        inputs.paused = state.ridgedTorus.paused;
+        inputs.animationSpeed = state.ridgedTorus.animationSpeed;
     } else {
         inputs.paused = state.braid.paused;
         inputs.animationSpeed = state.braid.animationSpeed;

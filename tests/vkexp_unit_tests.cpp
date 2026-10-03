@@ -3,6 +3,7 @@
 #include "vkexp/compute/ComputeResources.hpp"
 #include "vkexp/core/FrameClock.hpp"
 #include "vkexp/demo/LoopPlan.hpp"
+#include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/presets/PresetRegistry.hpp"
 #include "vkexp/profiling/CpuProfiler.hpp"
 #include "vkexp/profiling/ProfilerTypes.hpp"
@@ -14,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <numeric>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -66,11 +68,19 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 4, "Built-in preset count");
+    check(registry.all().size() == 9, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
     check(registry.require("nested-spheres").initialGeometryMode == 4,
           "Nested spheres initial geometry");
+    check(registry.require("punctured-sphere").initialGeometryMode == 5,
+          "Punctured sphere initial geometry");
+    check(registry.require("sleeve").initialGeometryMode == 6, "Sleeve initial geometry");
+    check(registry.require("morphing-sleeve").initialGeometryMode == 7,
+          "Morphing sleeve initial geometry");
+    check(registry.require("vortex-ring").initialGeometryMode == 8, "Vortex ring initial geometry");
+    check(registry.require("ridged-torus").initialGeometryMode == 9,
+          "Ridged torus initial geometry");
 
     registry.loadWindowPreset(VKEXP_TEST_WINDOW_PRESET);
     for (const auto& preset : registry.all()) {
@@ -503,6 +513,13 @@ void testLoopPlan() {
     check(!vkexp::planLoop(inputs).valid, "Orbital bloom has no wave loop");
     check(vkexp::defaultLoopDriver(3) == vkexp::LoopDriver::Flow, "Orbital bloom loops its orbit");
     check(vkexp::loopDriverLabel(4, vkexp::LoopDriver::Flow) == "Sphere turns", "Sphere loop label");
+    check(vkexp::defaultLoopDriver(5) == vkexp::LoopDriver::Flow, "Eversion loops its cycle");
+    check(vkexp::loopDriverLabel(5, vkexp::LoopDriver::Flow) == "Eversion cycles",
+          "Eversion loop label");
+    check(!vkexp::loopDriverAvailable(5, vkexp::LoopDriver::Rotation, true),
+          "Eversion has no object rotation loop");
+    check(vkexp::loopDriverLabel(6, vkexp::LoopDriver::Flow) == "Sleeve laps", "Sleeve loop label");
+    check(vkexp::loopDriverLabel(8, vkexp::LoopDriver::Flow) == "Ring rolls", "Vortex loop label");
 
     inputs.geometryMode = 0;
     inputs.paused = true;
@@ -516,6 +533,29 @@ void testLoopPlan() {
     check(!plan.valid && !plan.problem.empty(), "Overlong loop rejected");
     plan.durationSeconds = 0.001;
     check(vkexp::loopFrameCount(plan, 60.0) == 2, "Loop has at least two frames");
+}
+
+void testClosedLattice() {
+    check(vkexp::closedLatticeStep(987) == 610, "Fibonacci count steps by its neighbour");
+    for (const int count : {2000, 16000, 24000, 31337, 32000, 59999, 60000}) {
+        const int step = vkexp::closedLatticeStep(count);
+        check(step > count / 2 && step < count, "Lattice step near the golden ratio");
+        check(std::gcd(step, count) == 1, "Lattice step visits every longitude once");
+        // Closed: one step past the last point lands on the first one.
+        check(static_cast<long long>(count) * step % count == 0, "Lattice closes on itself");
+        // No two points nearer than 0.7 of the mean spacing, on a square or a stretched patch.
+        for (const double stretch : {0.4, 1.0, 2.5}) {
+            double nearest = 1.0;
+            for (int point = 1; point < 3000; ++point) {
+                const double along = static_cast<double>(point) / count;
+                double around = static_cast<double>(static_cast<long long>(point) * step % count) /
+                                count;
+                around = std::min(around, 1.0 - around);
+                nearest = std::min(nearest, std::hypot(along * stretch, around / stretch));
+            }
+            check(nearest * std::sqrt(static_cast<double>(count)) > 0.7, "Lattice stays even");
+        }
+    }
 }
 
 } // namespace
@@ -535,5 +575,6 @@ int main() {
     testFrameClock();
     testCaptureWriter();
     testLoopPlan();
+    testClosedLattice();
     return failures == 0 ? 0 : 1;
 }
