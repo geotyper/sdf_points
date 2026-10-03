@@ -17,13 +17,31 @@ void main() {
     } else {
         sphereLocalDirection = vec3(0.0, 0.0, 1.0);
     }
+    if (tentacleMode()) {
+        if (gl_InstanceIndex == 0) {
+            // The body: a squarer grid over the whole sphere. Its cells are too
+            // coarse for tentacles, so the fragment shader cuts their patches out.
+            const ivec2 grid = ivec2(240, SURFACE_ROWS * SURFACE_COLUMNS / 240);
+            sampleIndex = ivec2(cell / grid.y, cell % grid.y) + corners[gl_VertexIndex % 6];
+            material = TAU * vec2(sampleIndex) / vec2(grid);
+            sphereLocalDirection = localSphereDirection(material.x, material.y);
+            gl_Position = projectPoint(tentacleBodyPoint(sphereLocalDirection));
+        } else {
+            // One tentacle patch: fine rows from its tip out to the patch rim.
+            sphereLocalDirection = vec3(0.0);
+            gl_Position = projectPoint(tentacleSurface(
+                gl_InstanceIndex - 1, tentaclePatchAngle() * material.x / TAU, material.y));
+        }
+        return;
+    }
     if (ridgeMode()) {
         // The ridged torus curves both ways, so the same number of cells is
         // regrouped into a squarer grid: 240 along the ring, 192 around the tube.
         const ivec2 grid = ivec2(240, SURFACE_ROWS * SURFACE_COLUMNS / 240);
         sampleIndex = ivec2(cell / grid.y, cell % grid.y) + corners[gl_VertexIndex % 6];
         material = TAU * vec2(sampleIndex) / vec2(grid);
-        gl_Position = projectPoint(ridgePoint(material.x, material.y));
+        gl_Position = projectPoint(
+            ridgeLinkPoint(ridgePoint(material.x, material.y), gl_InstanceIndex));
         return;
     }
     if (tubeRidges()) {

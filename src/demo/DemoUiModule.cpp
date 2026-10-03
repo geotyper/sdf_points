@@ -1,6 +1,7 @@
 #include "vkexp/demo/DemoUiModule.hpp"
 
 #include "vkexp/demo/DemoState.hpp"
+#include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/profiling/Profiler.hpp"
 #include "vkexp/ui/ImGuiModule.hpp"
 
@@ -77,7 +78,8 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
     constexpr std::array geometryNames{"Plait",         "Twisted bundle", "Torsion loop",
                                        "Orbital bloom", "Nested spheres", "Punctured sphere",
                                        "Sleeve",        "Morphing sleeve", "Vortex ring",
-                                       "Ridged torus",  "Ridged braid"};
+                                       "Ridged torus",  "Ridged braid",    "Tentacle sphere",
+                                       "Bumpy torus",   "Torus chain"};
     const auto geometryCount = static_cast<int>(geometryNames.size());
     braid.geometryMode = std::clamp(braid.geometryMode, 0, geometryCount - 1);
     if (ImGui::BeginCombo("Geometry",
@@ -92,11 +94,86 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             }
         };
         group("Braids", {0, 1, 2, 3, 10});
-        group("Spheres", {4});
-        group("Eversion", {5, 6, 7, 8, 9});
+        group("Spheres", {4, 11});
+        group("Eversion", {5, 6, 7, 8, 9, 12, 13});
         ImGui::EndCombo();
     }
-    if (braid.geometryMode == 9) {
+    if (braid.geometryMode == 12 || braid.geometryMode == 13) {
+        const bool chain = braid.geometryMode == 13;
+        auto& torus = chain ? state_.torusChain : state_.bumpyTorus;
+        ImGui::Checkbox("Pause", &torus.paused);
+        ImGui::SliderFloat("Roll speed", &torus.animationSpeed, 0.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Spin", &torus.spin, -1.0F, 1.0F, "%.2f");
+        ImGui::SliderInt("Bumps around", &torus.bumpsAround, 2, 16);
+        // Rows are staggered by half a bump, which closes only for an even count.
+        torus.bumpsAround += torus.bumpsAround % 2;
+        ImGui::SliderInt("Bumps along", &torus.bumpsAlong, 4, 48);
+        ImGui::SliderInt("Row shift", &torus.rowShift, -6, 6);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Bumps the rows drift along the ring over one turn\n"
+                              "of the tube, which lines them up in spirals.");
+        }
+        ImGui::SliderFloat("Bump height", &torus.bumpHeight, 0.0F, 1.0F, "%.2f");
+        ImGui::SliderFloat("Bump size", &torus.bumpSize, 0.40F, 1.20F, "%.2f");
+        ImGui::SliderFloat("Bump roundness", &torus.roundness, 0.6F, 4.0F, "%.2f");
+        ImGui::SliderFloat("Pulse depth", &torus.pulseDepth, 0.0F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0: bumps stay at full height.\n"
+                              "1: they sink back into the plain torus every pulse.");
+        }
+        ImGui::SliderFloat("Pulse speed", &torus.pulseRate, 0.0F, 4.0F, "%.2f");
+        ImGui::SliderFloat("Ring radius", &torus.ringRadius, 0.80F, 1.30F, "%.2f");
+        ImGui::SliderFloat("Tube radius", &torus.tubeRadius, chain ? 0.10F : 0.20F, 0.48F, "%.2f");
+        if (chain) {
+            // Each link has to pass through the other's hole, bumps included.
+            torus.tubeRadius = std::min(torus.tubeRadius, torusChainTubeLimit(torus));
+        }
+        ImGui::SliderInt(chain ? "Points per link" : "Points", &torus.pointCount, 2000, 60000);
+        ImGui::SliderFloat("Point radius (700px)", &torus.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &torus.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &torus.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &torus.tilt, -90.0F, 90.0F);
+        ImGui::ColorEdit3("Bump color", torus.bumpColor.data());
+        ImGui::ColorEdit3("Body color", torus.bodyColor.data());
+        if (ImGui::Button(chain ? "Reset chain" : "Reset torus")) {
+            torus = chain ? torusChainDefaults() : BumpyTorusSettings{};
+        }
+    } else if (braid.geometryMode == 11) {
+        auto& tentacle = state_.tentacle;
+        ImGui::Checkbox("Pause", &tentacle.paused);
+        ImGui::SliderFloat("Speed", &tentacle.animationSpeed, 0.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Spin", &tentacle.spin, -1.0F, 1.0F, "%.2f");
+        ImGui::SliderInt("Tentacles", &tentacle.tentacles, 1, 32);
+        ImGui::SliderFloat("Tentacle length", &tentacle.length, 0.0F, 1.20F, "%.2f");
+        ImGui::SliderAngle("Tentacle width", &tentacle.width, 3.0F, 20.0F, "%.1f deg");
+        // Narrow enough for the tentacles' patches to sit side by side.
+        tentacle.width = std::min(tentacle.width, tentacleWidthLimit(tentacle.tentacles));
+        ImGui::SliderFloat("Tentacle roundness", &tentacle.roundness, 2.0F, 6.0F, "%.1f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("2: a tapering spike. Higher: a blunt finger with steep walls.");
+        }
+        ImGui::SliderFloat("Swirl", &tentacle.swirl, 0.0F, 2.5F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("All tentacles are wrung around the vertical axis and back.");
+        }
+        ImGui::SliderFloat("Sway", &tentacle.sway, 0.0F, 1.2F, "%.2f");
+        ImGui::SliderFloat("Ripple height", &tentacle.rippleHeight, 0.0F, 0.08F, "%.3f");
+        ImGui::SliderFloat("Ripples", &tentacle.ripples, 1.0F, 14.0F, "%.1f");
+        ImGui::SliderFloat("Sphere radius", &tentacle.radius, 0.35F, 0.90F, "%.2f");
+        ImGui::SliderInt("Sphere points", &tentacle.spherePoints, 2000, 40000);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Tentacles get as many points as keeps their density the same.");
+        }
+        ImGui::SliderFloat("Point radius (700px)", &tentacle.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &tentacle.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &tentacle.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &tentacle.tilt, -90.0F, 90.0F);
+        ImGui::ColorEdit3("Tip color", tentacle.tipColor.data());
+        ImGui::ColorEdit3("Body color", tentacle.bodyColor.data());
+        if (ImGui::Button("Reset tentacles")) {
+            tentacle = TentacleSettings{};
+        }
+    } else if (braid.geometryMode == 9) {
         auto& torus = state_.ridgedTorus;
         ImGui::Checkbox("Pause", &torus.paused);
         ImGui::SliderFloat("Roll speed", &torus.animationSpeed, 0.0F, 2.0F, "%.2f");

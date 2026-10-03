@@ -43,6 +43,54 @@ void main() {
         return;
     }
 
+    if (tentacleMode()) {
+        const float goldenAngle = 2.39996322973;
+        int index;
+        float angle, turn;
+        if (pc.motion.w > 0.5) {
+            // Tentacles: a sunflower of equal-area samples around each axis.
+            int perTentacle = max(int(pc.points.y + 0.5), 1);
+            int sampleIndex = gl_InstanceIndex % perTentacle;
+            index = gl_InstanceIndex / perTentacle;
+            angle = tentacleAreaAngle((float(sampleIndex) + 0.5) / float(perTentacle));
+            turn = goldenAngle * float(sampleIndex);
+        } else {
+            // Body: a Fibonacci sphere, minus the patches the tentacles cover.
+            int bodyPoints = max(int(pc.points.x + 0.5), 1);
+            float y = 1.0 - 2.0 * (float(gl_InstanceIndex) + 0.5) / float(bodyPoints);
+            float radial = sqrt(max(0.0, 1.0 - y * y));
+            float longitude = goldenAngle * float(gl_InstanceIndex);
+            tentacleNearest(vec3(radial * cos(longitude), y, radial * sin(longitude)),
+                            index, angle, turn);
+            if (angle < tentaclePatchAngle()) {
+                gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+                pointColor = vec3(0.0);
+                pointFacing = 0.0;
+                return;
+            }
+        }
+        vec3 position = tentacleSurface(index, angle, turn);
+        vec3 normal = toView(tentacleNormal(index, angle, turn));
+        vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
+        float diffuse = max(dot(normal, light), 0.0);
+        float illumination = 0.10 + 0.90 * pow(diffuse, 0.8);
+        float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
+                           * mix(0.36, 1.0, illumination);
+        radiusPixels = max(radiusPixels, 0.30);
+        float tipward = tentacleHeight(angle) / max(pc.shape.y, 1e-6);
+        vec3 tint = mix(pc.motion.rgb, pc.wave.rgb, smoothstep(0.05, 0.95, tipward));
+        // Troughs fall into shade so the travelling ripples read clearly.
+        tint *= mix(0.62, 1.0, 0.5 + 0.5 * tentacleRipple(angle));
+        pointColor = tint * illumination * pc.look.z;
+        pointFacing = smoothstep(-0.015, 0.025, normal.z);
+
+        vec4 clip = projectPoint(position);
+        clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
+        gl_Position = clip;
+        disc *= (radiusPixels + 0.65) / radiusPixels;
+        return;
+    }
+
     if (eversionMode() || sleeveMode() || morphMode() || ridgeMode()) {
         int pointCount = max(int(pc.points.x + 0.5), 1);
         const float goldenAngle = 2.39996322973;
@@ -60,8 +108,9 @@ void main() {
         float diffuse;
         if (ridgeMode()) {
             float angle = vortexAngle(fract(material + timePhase(1.0) / TAU));
-            position = ridgePoint(longitude, angle);
-            normal = toView(ridgeNormal(longitude, angle));
+            int link = int(pc.style.x + 0.5);
+            position = ridgeLinkPoint(ridgePoint(longitude, angle), link);
+            normal = toView(ridgeLinkTurn(ridgeNormal(longitude, angle), link));
             diffuse = max(dot(normal, light), 0.0);
             // The ridges take their colour as they rise out of the body.
             tint = mix(pc.motion.rgb, pc.wave.rgb,

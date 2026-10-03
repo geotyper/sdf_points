@@ -5,6 +5,7 @@
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/LoopPlan.hpp"
 #include "vkexp/demo/PointLattice.hpp"
+#include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/presets/PresetRegistry.hpp"
 #include "vkexp/profiling/CpuProfiler.hpp"
 #include "vkexp/profiling/ProfilerTypes.hpp"
@@ -69,7 +70,7 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 10, "Built-in preset count");
+    check(registry.all().size() == 13, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
     check(registry.require("nested-spheres").initialGeometryMode == 4,
@@ -567,6 +568,35 @@ void testClosedLattice() {
     }
 }
 
+void testTentaclePatch() {
+    // Without a tentacle the patch is a plain cap of the sphere.
+    const double width = 0.13;
+    const double cap = 0.5 * (1.0 - std::cos(vkexp::tentaclePatchWidths * width));
+    check(std::abs(vkexp::tentaclePatchAreaShare(0.62, 0.0, width, 3.0) - cap) < 1e-5,
+          "Flat tentacle patch is a spherical cap");
+    check(vkexp::tentaclePatchAreaShare(0.62, 0.75, width, 3.0) > 2.0 * cap,
+          "A tentacle adds its walls to the patch area");
+    check(vkexp::tentaclePatchPoints(16000, 0.62, 0.0, width, 3.0) ==
+              static_cast<int>(std::lround(16000 * cap)),
+          "Patch points follow the area share");
+    check(vkexp::tentacleWidthLimit(32) < vkexp::tentacleWidthLimit(8),
+          "More tentacles must be narrower");
+    check(vkexp::loopDriverLabel(11, vkexp::LoopDriver::Flow) == "Tentacle swings",
+          "Tentacle loop label");
+    vkexp::PresetRegistry registry;
+    check(registry.require("tentacle-sphere").initialGeometryMode == 11,
+          "Tentacle sphere initial geometry");
+    check(registry.require("bumpy-torus").initialGeometryMode == 12,
+          "Bumpy torus initial geometry");
+    check(vkexp::loopDriverLabel(12, vkexp::LoopDriver::Flow) == "Ring rolls",
+          "Bumpy torus loop label");
+    check(registry.require("torus-chain").initialGeometryMode == 13,
+          "Torus chain initial geometry");
+    const vkexp::BumpyTorusSettings chain = vkexp::torusChainDefaults();
+    check(chain.tubeRadius <= vkexp::torusChainTubeLimit(chain),
+          "Chain links fit through each other by default");
+}
+
 } // namespace
 
 int main() {
@@ -585,5 +615,6 @@ int main() {
     testCaptureWriter();
     testLoopPlan();
     testClosedLattice();
+    testTentaclePatch();
     return failures == 0 ? 0 : 1;
 }

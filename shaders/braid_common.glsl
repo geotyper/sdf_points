@@ -52,7 +52,11 @@ bool vortexMode() {
 }
 
 bool ridgeMode() {
-    return pc.style.w > 8.5;
+    return pc.style.w > 8.5 && pc.style.w < 9.5;
+}
+
+bool tentacleMode() {
+    return pc.style.w > 10.5;
 }
 
 float hashScalar(float value) {
@@ -443,7 +447,11 @@ float vortexSpan() {
 // Ridged torus reuses the push constants: shape = ring radius, tube radius, ridge
 // height, ridge count; points.y = twist, points.w = ridge sharpness; look.w =
 // twist wave; wave = ridge colour and spin; motion = body colour and pulse
-// rate; loop.y = pulse depth.
+// rate; loop.y = pulse depth. With loop.w rows of bumps around the tube the
+// ridges give way to bumps: shape.w then counts bumps along the ring, points.y
+// shifts each row along it, and look.w is the bump size within its cell.
+// style.x >= 0 makes it a chain of two such tori and, for the points, says
+// which link is being drawn.
 //
 // A torus of cloth rolls through its own hole without end. Ridges rise out of
 // it, each winding around the ring, and are carried by the roll: they dive into
@@ -462,6 +470,15 @@ float ridgeFraction(float angle) {
 
 // Ridges belong to the material: 0 in the valleys, 1 on the crests.
 float ridgeCrest(float longitude, float material) {
+    if (pc.loop.w > 0.5) {
+        // Staggered rows of round bumps, fixed to the material like the ridges.
+        float across = material * pc.loop.w;
+        float row = floor(across);
+        float along = pc.shape.w * longitude / TAU + 0.5 * row + pc.points.y * row / pc.loop.w;
+        vec2 cell = vec2(fract(across), fract(along)) - 0.5;
+        float reach = 4.0 * dot(cell, cell) / (pc.look.w * pc.look.w);
+        return pow(max(1.0 - reach, 0.0), pc.points.w);
+    }
     float phase = TAU * pc.shape.w * material - pc.points.y * longitude
                 - pc.look.w * sin(longitude - timePhase(1.0));
     return pow(max(0.5 + 0.5 * cos(phase), 0.0), pc.points.w);
@@ -470,9 +487,10 @@ float ridgeCrest(float longitude, float material) {
 vec3 ridgePoint(float longitude, float angle) {
     float material = fract(ridgeFraction(angle) - timePhase(1.0) / TAU);
     float growth = pc.shape.z * ridgeGrowth();
-    // The body thins as the ridges rise from it.
-    float radius = pc.shape.y
-                 * (1.0 - 0.45 * growth + growth * ridgeCrest(longitude, material));
+    // The body thins as the ridges rise from it; bumps only add to it.
+    float crest = ridgeCrest(longitude, material);
+    float radius = pc.shape.y * (pc.loop.w > 0.5 ? 1.0 + 0.45 * growth * crest
+                                                 : 1.0 - 0.45 * growth + growth * crest);
     return sleeveAround(longitude, vec2(pc.shape.x + radius * cos(angle), radius * sin(angle)));
 }
 
@@ -482,8 +500,159 @@ vec3 ridgeNormal(float longitude, float angle) {
     return normalize(cross(around, along));
 }
 
+bool ridgeChain() {
+    return pc.style.x > -0.5;
+}
+
+// Two links of a chain: each torus passes through the other's hole, in planes
+// at right angles, with its tube centred on the other's middle.
+vec3 ridgeLinkTurn(vec3 value, int link) {
+    return ridgeChain() && link > 0 ? vec3(value.x, -value.z, value.y) : value;
+}
+
+vec3 ridgeLinkPoint(vec3 point, int link) {
+    if (!ridgeChain()) return point;
+    return ridgeLinkTurn(point, link) + vec3(link > 0 ? 0.5 : -0.5, 0.0, 0.0) * pc.shape.x;
+}
+
 float ridgeSpan() {
-    return (pc.shape.x + pc.shape.y * (1.0 + 0.55 * pc.shape.z)) * 1.10;
+    float reach = pc.shape.x + pc.shape.y * (1.0 + 0.55 * pc.shape.z);
+    return (ridgeChain() ? reach + 0.5 * pc.shape.x : reach) * 1.10;
+}
+
+// Tentacle sphere reuses the push constants: shape = sphere radius, tentacle
+// length, tentacle width (radians), tentacle count; points = sphere samples,
+// samples per tentacle, pixel radius, tentacle roundness; look.w = ripple
+// height; wave = tip colour and spin; motion = body colour and, per draw, which
+// part is drawn (0 body, 1 tentacles); loop = ripples per tentacle, swirl, sway.
+//
+// One closed skin: a sphere that grows tentacles around evenly spread axes.
+// Ripples start between the tentacles, run across the body and climb each one
+// to its tip. The tentacles lean and circle on their own, and together they
+// are wrung around the vertical axis one way and then the other.
+const float TENTACLE_PATCH_WIDTHS = 2.2;
+const int TENTACLE_SEGMENTS = 64;
+const int MAX_TENTACLES = 32;
+
+int tentacleCount() {
+    return clamp(int(pc.shape.w + 0.5), 1, MAX_TENTACLES);
+}
+
+float tentaclePatchAngle() {
+    return TENTACLE_PATCH_WIDTHS * pc.shape.z;
+}
+
+// Height above the sphere at this angle from the tentacle's axis.
+float tentacleHeight(float angle) {
+    return pc.shape.y * exp(-pow(angle / pc.shape.z, pc.points.w));
+}
+
+// Unbent, unrippled section of a tentacle: distance from its axis and height
+// along it. The sphere's own surface continues it beyond the tentacle.
+vec2 tentacleSection(float angle) {
+    return (pc.shape.x + tentacleHeight(angle)) * vec2(sin(angle), cos(angle));
+}
+
+// Angle from the axis with this share of the patch's area inside it, so the
+// points of a tentacle keep one density from its tip down to the body.
+float tentacleAreaAngle(float fraction) {
+    float patchAngle = tentaclePatchAngle();
+    float total = 0.0;
+    vec2 previous = tentacleSection(0.0);
+    for (int segment = 1; segment <= TENTACLE_SEGMENTS; ++segment) {
+        vec2 current = tentacleSection(patchAngle * float(segment) / float(TENTACLE_SEGMENTS));
+        total += 0.5 * (previous.x + current.x) * distance(previous, current);
+        previous = current;
+    }
+    float area = fraction * total;
+    previous = tentacleSection(0.0);
+    for (int segment = 1; segment <= TENTACLE_SEGMENTS; ++segment) {
+        vec2 current = tentacleSection(patchAngle * float(segment) / float(TENTACLE_SEGMENTS));
+        float piece = 0.5 * (previous.x + current.x) * distance(previous, current);
+        if (area <= piece) {
+            // Area grows with the square of the angle next to the axis.
+            float within = area / max(piece, 1e-12);
+            within = segment == 1 ? sqrt(within) : within;
+            return patchAngle * (float(segment - 1) + within) / float(TENTACLE_SEGMENTS);
+        }
+        area -= piece;
+        previous = current;
+    }
+    return patchAngle;
+}
+
+void tentacleFrame(int index, out vec3 axis, out vec3 first, out vec3 second) {
+    axis = sphereHoleDirection(index, tentacleCount());
+    first = normalize(cross(abs(axis.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), axis));
+    second = cross(axis, first);
+}
+
+// The tentacle whose axis is nearest to this direction, and the direction's
+// polar coordinates around that axis.
+void tentacleNearest(vec3 direction, out int index, out float angle, out float turn) {
+    int count = tentacleCount();
+    float nearest = -2.0;
+    index = 0;
+    for (int candidate = 0; candidate < MAX_TENTACLES; ++candidate) {
+        if (candidate >= count) break;
+        float alignment = dot(direction, sphereHoleDirection(candidate, count));
+        if (alignment > nearest) {
+            nearest = alignment;
+            index = candidate;
+        }
+    }
+    vec3 axis, first, second;
+    tentacleFrame(index, axis, first, second);
+    angle = acos(clamp(nearest, -1.0, 1.0));
+    turn = atan(dot(direction, second), dot(direction, first));
+}
+
+// -1..1; crests travel from the body up to the tentacle tips.
+float tentacleRipple(float angle) {
+    float run = pc.shape.x * angle + pc.shape.y - tentacleHeight(angle);
+    return cos(TAU * pc.loop.y * run / max(pc.shape.y, 1e-3) - timePhase(2.0));
+}
+
+vec3 tentacleSurface(int index, float angle, float turn) {
+    vec3 axis, first, second;
+    tentacleFrame(index, axis, first, second);
+    float height = tentacleHeight(angle);
+    float slope = -height * pc.points.w * pow(angle / pc.shape.z, pc.points.w - 1.0) / pc.shape.z;
+    vec2 along = vec2(sin(angle), cos(angle));
+    vec2 tangent = slope * along + (pc.shape.x + height) * vec2(along.y, -along.x);
+    vec2 outward = normalize(vec2(-tangent.y, tangent.x));
+    // Ripples push along the skin's normal, so they show on the tentacle walls too.
+    vec2 section = (pc.shape.x + height) * along
+                 + pc.look.w * pc.shape.x * tentacleRipple(angle) * outward;
+    vec3 point = section.x * (cos(turn) * first + sin(turn) * second) + section.y * axis;
+    // Bending turns about the sphere's centre by an angle that grows towards
+    // the tip, which leaves the body where it is.
+    float tipward = pow(height / max(pc.shape.y, 1e-6), 1.5);
+    float lean = timePhase(1.0) + 2.39996322973 * float(index);
+    point = rotateAroundAxis(point, cos(lean) * first + sin(lean) * second, pc.loop.w * tipward);
+    point = rotateAroundAxis(point, vec3(0.0, 1.0, 0.0),
+                             pc.loop.z * sin(timePhase(1.0)) * tipward);
+    return rotateAroundAxis(point, vec3(0.0, 1.0, 0.0), timePhase(pc.wave.w));
+}
+
+vec3 tentacleNormal(int index, float angle, float turn) {
+    angle = max(angle, 0.004);
+    vec3 outwards = tentacleSurface(index, angle + 0.002, turn)
+                  - tentacleSurface(index, angle - 0.002, turn);
+    vec3 around = tentacleSurface(index, angle, turn + 0.01)
+                - tentacleSurface(index, angle, turn - 0.01);
+    return normalize(cross(outwards, around));
+}
+
+vec3 tentacleBodyPoint(vec3 direction) {
+    int index;
+    float angle, turn;
+    tentacleNearest(direction, index, angle, turn);
+    return tentacleSurface(index, angle, turn);
+}
+
+float tentacleSpan() {
+    return (pc.shape.x * (1.0 + pc.look.w) + pc.shape.y) * 1.10;
 }
 
 float releaseEnvelope(float u) {
@@ -650,7 +819,7 @@ float tubeRidge(float u, float v) {
 
 bool tubeRidges() {
     return pc.loop.y > 0.0 && !nestedSphereMode() && !eversionMode() && !sleeveMode()
-        && !morphMode() && !ridgeMode();
+        && !morphMode() && !ridgeMode() && !tentacleMode();
 }
 
 vec3 surfacePoint(float u, float v, float strand) {
@@ -668,7 +837,10 @@ vec3 surfacePoint(float u, float v, float strand) {
         return sleeveAround(v, morphProfile(u / TAU, false).xy);
     }
     if (ridgeMode()) {
-        return ridgePoint(v, u);
+        return ridgeLinkPoint(ridgePoint(v, u), int(strand + 0.5));
+    }
+    if (tentacleMode()) {
+        return tentacleBodyPoint(localSphereDirection(u, v));
     }
     vec3 center, tangent, x, y;
     float radius;
@@ -740,6 +912,9 @@ vec4 projectPoint(vec3 p) {
     }
     if (ridgeMode()) {
         span = ridgeSpan();
+    }
+    if (tentacleMode()) {
+        span = tentacleSpan();
     }
     vec2 scale = min(pc.view.x, pc.view.y) / pc.view.xy;
     return vec4(p.xy * vec2(1.0, -1.0) * scale / span, (4.0 - p.z) / 8.0, 1.0);

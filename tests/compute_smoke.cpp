@@ -404,6 +404,7 @@ void runBraidPeriodicity(vkexp::HeadlessComputeContext& context) {
     // point back.
     constexpr float bodyRadius = 0.40F;
     settings[19] = 9.0F;
+    settings[16] = -1.0F; // a single torus, not a chain
     settings[5] = bodyRadius;
     settings[6] = 1.0F;  // ridge height
     settings[7] = 5.0F;  // ridges
@@ -465,6 +466,114 @@ void runBraidPeriodicity(vkexp::HeadlessComputeContext& context) {
     }
     if (!crest || !valley) {
         throw std::runtime_error("Ridged braid shows no ridges");
+    }
+
+    // Tentacle sphere: the skin stays between the rippled sphere and the tentacle
+    // tips, some of it does reach out along a tentacle, and a whole cycle of the
+    // sway brings every point back.
+    constexpr float bodySphere = 0.62F;
+    constexpr float tentacleLength = 0.75F;
+    constexpr float rippleHeight = 0.035F;
+    settings = {700,   700,   0,     0,     bodySphere, tentacleLength, 0.13F, 12,
+                16000, 400,   1.45F, 3.0F,  0.25F,      0.18F,          1.2F,  rippleHeight,
+                -1,    -1,    -1,    11,    1,          0.62F,          0.16F, 0,
+                0.14F, 0.58F, 1,     0,     0,          6.0F,           0.9F,  0.35F};
+    const auto swayStart = sample();
+    settings[2] = 2.0F * pi;
+    const auto swayEnd = sample();
+    bool tentacleSeen = false;
+    for (float phase : {0.0F, 1.6F, 4.0F}) {
+        settings[2] = phase;
+        const auto skin = sample();
+        for (std::size_t value = 0; value < floatCount; value += 8) {
+            const float reach = std::hypot(skin[value], skin[value + 1], skin[value + 2]);
+            const float ripple = bodySphere * rippleHeight + 0.001F;
+            if (!(reach > bodySphere - ripple) ||
+                !(reach < bodySphere + tentacleLength + ripple)) {
+                throw std::runtime_error("Tentacle sphere skin leaves its range");
+            }
+            tentacleSeen = tentacleSeen || reach > bodySphere + 0.3F * tentacleLength;
+        }
+    }
+    if (!tentacleSeen) {
+        throw std::runtime_error("Tentacle sphere grows no tentacles");
+    }
+    for (std::size_t value = 0; value < floatCount; value += 8) {
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            if (!(std::abs(swayEnd[value + axis] - swayStart[value + axis]) < 0.002F)) {
+                throw std::runtime_error("Tentacle sphere does not return after one cycle");
+            }
+        }
+    }
+
+    // Bumpy torus: bumps only rise from the tube, up to their height, and one roll
+    // brings every point back.
+    constexpr float bumpHeight = 0.8F;
+    settings = {700,   700,   0,     0,    ringRadius, bodyRadius, bumpHeight, 20,
+                44000, 0,     1.35F, 1.5F, 0.85F,      0.18F,      1.2F,       0.85F,
+                -1,    -1,    -1,    9,    1,          0.62F,      0.16F,      0,
+                0.14F, 0.58F, 1,     1,    0,          0,          0,          8};
+    const auto bumpsStart = sample();
+    settings[2] = 2.0F * pi;
+    const auto bumpsEnd = sample();
+    bool bumpSeen = false;
+    bool bodySeen = false;
+    for (std::size_t value = 0; value < floatCount; value += 8) {
+        const float distance = bodyDistance(bumpsStart, value);
+        if (!(distance > bodyRadius - 0.0005F) ||
+            !(distance < bodyRadius * (1.0F + 0.45F * bumpHeight) + 0.0005F)) {
+            throw std::runtime_error("Bumpy torus bumps leave their height range");
+        }
+        bumpSeen = bumpSeen || distance > bodyRadius * 1.2F;
+        bodySeen = bodySeen || distance < bodyRadius * 1.01F;
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            if (!(std::abs(bumpsEnd[value + axis] - bumpsStart[value + axis]) < 0.002F)) {
+                throw std::runtime_error("Bumpy torus does not return after one roll");
+            }
+        }
+    }
+    if (!bumpSeen || !bodySeen) {
+        throw std::runtime_error("Bumpy torus shows no separate bumps");
+    }
+
+    // Torus chain: the probe's strands 0 and 1 are the two links. Each keeps its
+    // tube around its own ring, in planes at right angles, and they never touch.
+    constexpr float linkRing = 1.0F;
+    constexpr float linkTube = 0.26F;
+    constexpr float linkBumps = 0.7F;
+    settings[4] = linkRing;
+    settings[5] = linkTube;
+    settings[6] = linkBumps;
+    settings[16] = 0.0F; // chain
+    settings[2] = 1.3F;
+    const auto links = sample();
+    const float bumpedTube = linkTube * (1.0F + 0.45F * linkBumps) + 0.0005F;
+    float gap = 10.0F;
+    for (std::size_t point = 0; point < 1024; ++point) {
+        const std::size_t at = point * 8;
+        const std::size_t strand = (point / 16) % 3;
+        const float x = links[at];
+        const float y = links[at + 1];
+        const float z = links[at + 2];
+        // Link 0 lies around the y axis, the other one around the z axis.
+        const float tube = strand == 0
+                               ? std::hypot(std::hypot(x + 0.5F * linkRing, z) - linkRing, y)
+                               : std::hypot(std::hypot(x - 0.5F * linkRing, y) - linkRing, z);
+        if (!(tube > linkTube - 0.0005F) || !(tube < bumpedTube)) {
+            throw std::runtime_error("Torus chain link leaves its ring");
+        }
+        if (strand != 0) {
+            continue;
+        }
+        for (std::size_t other = 0; other < 1024; ++other) {
+            if ((other / 16) % 3 == 1) {
+                const std::size_t to = other * 8;
+                gap = std::min(gap, std::hypot(x - links[to], y - links[to + 1], z - links[to + 2]));
+            }
+        }
+    }
+    if (!(gap > 0.1F)) {
+        throw std::runtime_error("Torus chain links touch");
     }
 }
 

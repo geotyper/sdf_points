@@ -125,6 +125,30 @@ ridges never add to the overlap between strands, and the valleys fall into shade
 Launch it with `--preset ridged-braid`. **Vortex ring** has the same ridge controls,
 off by default.
 
+**Tentacle sphere** is one closed skin: a sphere that grows tentacles around evenly
+spread axes. Ripples start between the tentacles, run across the body and climb each
+one to its tip. The tentacles lean and circle on their own, and together they are
+wrung around the vertical axis one way and then the other, returning to where they
+started. The body is a Fibonacci sphere of points and every tentacle has its own
+equal-area sunflower of points, sized so that both have the same density. Launch it
+with `--preset tentacle-sphere`. Controls cover speed, spin, tentacle count, length,
+width and roundness, swirl, sway, ripple height and count, sphere radius and point
+count, point appearance, tilt and the tip and body colors.
+
+**Bumpy torus** is the rolling torus again, covered in staggered rows of round bumps
+in place of ridges. The bumps belong to the cloth, so as the torus turns inside out
+through its hole they ride over the rim, crowd together inside the hole and spread out
+again underneath. Launch it with `--preset bumpy-torus`. Controls cover roll speed,
+spin, bump counts around the tube and along the ring, row shift (which lines the bumps
+up in spirals), bump height, size and roundness, pulse depth and speed, ring and tube
+radius, point count and appearance, tilt and the bump and body colors.
+
+**Torus chain** links two such bumpy tori like a chain: the second passes through the
+hole of the first in a plane at right angles, and each keeps rolling inside out through
+its own hole, carrying its bumps past the other link. The tube radius is held below
+what still fits through the other link's hole with its bumps. Launch it with
+`--preset torus-chain`; it has the bumpy torus controls, with its own settings.
+
 Point visibility is evaluated per fragment against the hidden perforated depth shell.
 At silhouettes and opening boundaries, only the covered part of a circular sprite is
 removed instead of making the entire point disappear when its center becomes hidden.

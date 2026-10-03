@@ -45,6 +45,9 @@ std::string_view loopDriverLabel(const int geometryMode, const LoopDriver driver
         if (geometryMode == 5) {
             return "Eversion cycles";
         }
+        if (geometryMode == 11) {
+            return "Tentacle swings";
+        }
         if (geometryMode >= 8) {
             return "Ring rolls";
         }

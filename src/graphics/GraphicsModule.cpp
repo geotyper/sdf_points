@@ -3,6 +3,7 @@
 #include "vkexp/core/VulkanContext.hpp"
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/PointLattice.hpp"
+#include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/profiling/Profiler.hpp"
 
 #include <algorithm>
@@ -215,7 +216,8 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         loopCycles_ = static_cast<float>(recording->phaseCycles);
         if (state_.braid.geometryMode == 4) {
             nestedSphereTime_ += static_cast<float>(recording->phaseStep);
-        } else if (state_.braid.geometryMode >= 5 && state_.braid.geometryMode <= 9) {
+        } else if ((state_.braid.geometryMode >= 5 && state_.braid.geometryMode <= 9) ||
+                   state_.braid.geometryMode >= 11) {
             eversionTime_ += static_cast<float>(recording->phaseStep);
         } else {
             weaveTime_ += static_cast<float>(recording->phaseStep);
@@ -250,6 +252,18 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         } else if (state_.braid.geometryMode == 9) {
             if (!state_.ridgedTorus.paused) {
                 eversionTime_ += frame.deltaSeconds * state_.ridgedTorus.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 11) {
+            if (!state_.tentacle.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.tentacle.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 12) {
+            if (!state_.bumpyTorus.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.bumpyTorus.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 13) {
+            if (!state_.torusChain.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.torusChain.animationSpeed;
             }
         } else if (!state_.braid.paused) {
             const float phaseStep = frame.deltaSeconds * state_.braid.animationSpeed;
@@ -359,6 +373,13 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         vkCmdSetViewport(commands, 0, 1, &viewport);
         vkCmdSetScissor(commands, 0, 1, &scissor);
         const auto& braid = state_.braid;
+        const auto& tentacle = state_.tentacle;
+        // Narrow enough for the tentacles' patches to sit side by side.
+        const float tentacleWidth =
+            std::min(tentacle.width, tentacleWidthLimit(tentacle.tentacles));
+        const int tentaclePoints =
+            tentaclePatchPoints(tentacle.spherePoints, tentacle.radius, tentacle.length,
+                                tentacleWidth, tentacle.roundness);
         std::array<float, 32> pushConstants{};
         if (braid.geometryMode == 4) {
             const auto& spheres = state_.nestedSpheres;
@@ -540,6 +561,80 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 vortex.ridges.packed()[1],
                 vortex.ridges.packed()[2],
             };
+        } else if (braid.geometryMode == 12 || braid.geometryMode == 13) {
+            // Drawn by the ridged torus shader, with bumps in place of ridges;
+            // the chain draws it twice, as two links.
+            const bool chain = braid.geometryMode == 13;
+            const auto& torus = chain ? state_.torusChain : state_.bumpyTorus;
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                torus.ringRadius,
+                chain ? std::min(torus.tubeRadius, torusChainTubeLimit(torus)) : torus.tubeRadius,
+                torus.bumpHeight,
+                static_cast<float>(torus.bumpsAlong),
+                static_cast<float>(torus.pointCount),
+                static_cast<float>(torus.rowShift),
+                torus.pointSize,
+                torus.roundness,
+                torus.tilt,
+                torus.glow,
+                torus.brightness,
+                torus.bumpSize,
+                chain ? 0.0F : -1.0F,
+                -1.0F,
+                -1.0F,
+                9.0F,
+                torus.bumpColor[0],
+                torus.bumpColor[1],
+                torus.bumpColor[2],
+                torus.spin,
+                torus.bodyColor[0],
+                torus.bodyColor[1],
+                torus.bodyColor[2],
+                torus.pulseRate,
+                loopCycles_,
+                torus.pulseDepth,
+                latticeStep(torus.pointCount),
+                static_cast<float>(torus.bumpsAround),
+            };
+        } else if (braid.geometryMode == 11) {
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                tentacle.radius,
+                tentacle.length,
+                tentacleWidth,
+                static_cast<float>(tentacle.tentacles),
+                static_cast<float>(tentacle.spherePoints),
+                static_cast<float>(tentaclePoints),
+                tentacle.pointSize,
+                tentacle.roundness,
+                tentacle.tilt,
+                tentacle.glow,
+                tentacle.brightness,
+                tentacle.rippleHeight,
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                11.0F,
+                tentacle.tipColor[0],
+                tentacle.tipColor[1],
+                tentacle.tipColor[2],
+                tentacle.spin,
+                tentacle.bodyColor[0],
+                tentacle.bodyColor[1],
+                tentacle.bodyColor[2],
+                0.0F,
+                loopCycles_,
+                tentacle.ripples,
+                tentacle.swirl,
+                tentacle.sway,
+            };
         } else if (braid.geometryMode == 9) {
             const auto& torus = state_.ridgedTorus;
             pushConstants = {
@@ -623,9 +718,11 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         // depth-only skin hides rear points even in the gaps between sprites.
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, surfacePipeline_);
         const auto objectCount = static_cast<std::uint32_t>(
-            braid.geometryMode == 4   ? state_.nestedSpheres.sphereCount
-            : braid.geometryMode == 8 ? state_.vortex.strands
-            : braid.geometryMode >= 5 && braid.geometryMode <= 9 ? 1
+            braid.geometryMode == 4    ? state_.nestedSpheres.sphereCount
+            : braid.geometryMode == 11 ? tentacle.tentacles + 1
+            : braid.geometryMode == 8  ? state_.vortex.strands
+            : braid.geometryMode == 13 ? 2
+            : (braid.geometryMode >= 5 && braid.geometryMode <= 9) || braid.geometryMode == 12 ? 1
                                       : braid.strands);
         vkCmdDraw(commands, 720U * 64U * 6U, objectCount, 0, 0);
         vkCmdEndRendering(commands);
@@ -689,6 +786,26 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.sleeve.pointCount), 0, 0);
         } else if (braid.geometryMode == 7) {
             vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.morph.pointCount), 0, 0);
+        } else if (braid.geometryMode == 12) {
+            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.bumpyTorus.pointCount), 0, 0);
+        } else if (braid.geometryMode == 13) {
+            const auto linkPoints = static_cast<std::uint32_t>(state_.torusChain.pointCount);
+            vkCmdDraw(commands, 6, linkPoints, 0, 0);
+            const float secondLink = 1.0F;
+            vkCmdPushConstants(commands, pipelineLayout_,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               16U * sizeof(float), sizeof(float), &secondLink);
+            vkCmdDraw(commands, 6, linkPoints, 0, 0);
+        } else if (braid.geometryMode == 11) {
+            // Body first, then every tentacle's own lattice; the shader reads
+            // which part it is drawing from one push constant.
+            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(tentacle.spherePoints), 0, 0);
+            const float tentaclePart = 1.0F;
+            vkCmdPushConstants(commands, pipelineLayout_,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               27U * sizeof(float), sizeof(float), &tentaclePart);
+            vkCmdDraw(commands, 6,
+                      static_cast<std::uint32_t>(tentaclePoints * tentacle.tentacles), 0, 0);
         } else if (braid.geometryMode == 9) {
             vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.ridgedTorus.pointCount), 0,
                       0);

@@ -35,7 +35,7 @@ struct ComputeOutput {
 };
 
 struct BraidSettings {
-    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid
+    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain
     bool paused{};
     bool autoRotate{false};
     bool limitTubeOverlap{false};
@@ -197,6 +197,68 @@ struct RidgedTorusSettings {
     std::array<float, 3> bodyColor{0.14F, 0.58F, 1.00F};
 };
 
+struct TentacleSettings {
+    bool paused{};
+    float animationSpeed{0.35F};
+    float spin{0.10F};
+    float radius{0.62F};
+    float length{0.75F};
+    float width{0.13F}; // radians on the sphere
+    float roundness{3.0F};
+    float rippleHeight{0.035F};
+    float ripples{6.0F};
+    float swirl{0.6F};
+    float sway{0.35F};
+    float pointSize{1.45F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.25F};
+    int tentacles{12};
+    int spherePoints{16000};
+    std::array<float, 3> tipColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> bodyColor{0.14F, 0.58F, 1.00F};
+};
+
+struct BumpyTorusSettings {
+    bool paused{};
+    float animationSpeed{0.30F};
+    float pulseRate{1.0F};
+    float pulseDepth{0.0F};
+    float spin{0.0F};
+    float ringRadius{0.95F};
+    float tubeRadius{0.40F};
+    float bumpHeight{0.8F};
+    float bumpSize{0.85F};
+    float roundness{1.5F};
+    float pointSize{1.35F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.85F};
+    int bumpsAround{8};
+    int bumpsAlong{20};
+    int rowShift{0};
+    int pointCount{44000};
+    std::array<float, 3> bumpColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> bodyColor{0.14F, 0.58F, 1.00F};
+};
+
+// Two bumpy tori linked like a chain: slimmer, so each fits the other's hole.
+[[nodiscard]] inline BumpyTorusSettings torusChainDefaults() {
+    BumpyTorusSettings settings;
+    settings.ringRadius = 1.00F;
+    settings.tubeRadius = 0.26F;
+    settings.bumpHeight = 0.7F;
+    settings.bumpsAlong = 28;
+    settings.pointCount = 30000;
+    settings.tilt = 0.55F;
+    return settings;
+}
+
+// Thickest tube that still passes through the other link's hole with its bumps.
+[[nodiscard]] inline float torusChainTubeLimit(const BumpyTorusSettings& settings) {
+    return 0.46F * settings.ringRadius / (1.0F + 0.45F * settings.bumpHeight);
+}
+
 struct StrandPalette {
     bool enabled{false};
     std::array<std::array<float, 3>, 5> colors{{
@@ -239,6 +301,9 @@ struct DemoState {
     VortexSettings vortex;
     RidgedTorusSettings ridgedTorus;
     RidgedBraidSettings ridgedBraid;
+    TentacleSettings tentacle;
+    BumpyTorusSettings bumpyTorus;
+    BumpyTorusSettings torusChain{torusChainDefaults()};
     StrandPalette palette;
     LoopSettings loop;
 };
@@ -272,6 +337,15 @@ struct DemoState {
     } else if (state.braid.geometryMode == 9) {
         inputs.paused = state.ridgedTorus.paused;
         inputs.animationSpeed = state.ridgedTorus.animationSpeed;
+    } else if (state.braid.geometryMode == 11) {
+        inputs.paused = state.tentacle.paused;
+        inputs.animationSpeed = state.tentacle.animationSpeed;
+    } else if (state.braid.geometryMode == 12) {
+        inputs.paused = state.bumpyTorus.paused;
+        inputs.animationSpeed = state.bumpyTorus.animationSpeed;
+    } else if (state.braid.geometryMode == 13) {
+        inputs.paused = state.torusChain.paused;
+        inputs.animationSpeed = state.torusChain.animationSpeed;
     } else {
         inputs.paused = state.braid.paused;
         inputs.animationSpeed = state.braid.animationSpeed;
