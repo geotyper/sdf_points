@@ -34,6 +34,19 @@ void main() {
         }
         return;
     }
+    if (archMode()) {
+        // Instance 0 is the sphere, the others are the arches, lengthwise rows.
+        gl_Position = projectPoint(archGridPoint(material.x, material.y, float(gl_InstanceIndex)));
+        return;
+    }
+    if (smaleMode()) {
+        // The everting sphere folds in both directions: a squarer grid again.
+        const ivec2 grid = ivec2(240, SURFACE_ROWS * SURFACE_COLUMNS / 240);
+        sampleIndex = ivec2(cell / grid.y, cell % grid.y) + corners[gl_VertexIndex % 6];
+        material = TAU * vec2(sampleIndex) / vec2(grid);
+        gl_Position = projectPoint(smalePoint(0.5 * (material.y - PI), material.x));
+        return;
+    }
     if (ridgeMode()) {
         // The ridged torus curves both ways, so the same number of cells is
         // regrouped into a squarer grid: 240 along the ring, 192 around the tube.

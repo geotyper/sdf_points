@@ -149,6 +149,39 @@ its own hole, carrying its bumps past the other link. The tube radius is held be
 what still fits through the other link's hole with its bumps. Launch it with
 `--preset torus-chain`; it has the bumpy torus controls, with its own settings.
 
+**Sphere eversion** turns a closed sphere inside out through itself, with no hole,
+crease or pinch, following the explicit formulas of A. and W. Bednorz, *Analytic sphere
+eversion using ruled surfaces* (arXiv:1711.10466, n = 2). The poles are pushed through
+each other into a wormhole, its throat twists through a halfway surface where neither
+side is preferred, and the same steps run backwards on the other side; every point
+ends opposite to where it started. The two sides of the material have their own colors
+and both stay visible, so the sphere ends in the other color. Launch it with
+`--preset sphere-eversion`. Controls cover eversion speed, how long the round spheres
+linger, spin, radius, point count and appearance, tilt and the two side colors.
+
+**Arched sphere** is a fountain that feeds itself. The cloth climbs the sphere from the
+south pole to the north, pours out through a crown of arches, runs down them outside
+and re-enters around the south pole. Bands painted on the material, optionally cut
+into a checkerboard, make the circulation readable, and the sphere's points form a
+closed equal-area lattice while the arches get rows and columns of the same spacing.
+The arches leave and meet the sphere at a right angle and flare like roots where they
+grow out of it, and they can twist around the sphere on their way down. Launch it with
+`--preset arched-sphere`. Controls cover flow speed, spin, arch count, height, tube
+radius and twist, bands, checkerboard sectors, sphere radius and point count, point
+appearance, tilt and the two colors.
+
+**Effects** is a separate window whose settings apply to the points of every geometry.
+**Drift** moves neighbouring points together in a slow flow and **Jitter** makes each
+tremble on its own; both slide points along the surface or away from it. **Shed
+points** lets a share of the points leave along the surface normal, shrinking until
+they are gone, and grow back where they started; **Fall** bends their flight down or
+up. **Trails** follows each point with smaller, dimmer copies of itself from a moment
+ago, at the cost of one more pass over the points per copy. **See-through** drops the hidden black
+skin behind the points, so every point is drawn, including those turned away, and they
+simply overlap. All motion is driven by the scene's own phase, so loop captures stay
+seamless. `--effects drift,jitter,shed,trails,see-through` switches effects on from the
+command line.
+
 Point visibility is evaluated per fragment against the hidden perforated depth shell.
 At silhouettes and opening boundaries, only the covered part of a circular sprite is
 removed instead of making the entire point disappear when its center becomes hidden.

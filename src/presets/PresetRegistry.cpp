@@ -97,6 +97,22 @@ PresetRegistry::PresetRegistry()
                  1280,
                  720,
                  13},
+          Preset{"sphere-eversion",
+                 "Closed point sphere turned inside out through itself",
+                 true,
+                 false,
+                 {0.002F, 0.003F, 0.012F, 1.0F},
+                 1280,
+                 720,
+                 14},
+          Preset{"arched-sphere",
+                 "Point sphere whose cloth pours out through a crown of arches and back in",
+                 true,
+                 false,
+                 {0.002F, 0.003F, 0.012F, 1.0F},
+                 1280,
+                 720,
+                 15},
       } {}
 
 void PresetRegistry::loadWindowPreset(const std::string_view path) {

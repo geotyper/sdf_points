@@ -15,7 +15,9 @@ void main() {
     vec3 center, tangent, x, y;
     float radius;
     tubeFrame(u, strand, center, tangent, x, y, radius);
-    vec3 p = surfacePoint(u, v, strand);
+    // The arched sphere stays out of surfacePoint: the braids' normals are taken
+    // by differences of it and are sensitive to how it compiles.
+    vec3 p = archMode() ? archGridPoint(u, v, strand) : surfacePoint(u, v, strand);
     vec3 offset = p - center;
     // Verify actual emitted positions, not merely the frame's nominal radius.
     float sectionError = max(abs(length(offset) - radius), abs(dot(offset, tangent)));

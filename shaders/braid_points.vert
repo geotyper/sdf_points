@@ -6,8 +6,56 @@ layout(location = 0) out vec2 disc;
 layout(location = 1) flat out vec3 pointColor;
 layout(location = 2) flat out float pointFacing;
 
+// Effects shared by every geometry; all zero when they are switched off.
+layout(set = 0, binding = 1) uniform PointEffects {
+    vec4 drift; // flow amount, flow scale, speed, per-point jitter amount
+    vec4 shed;  // share of points shedding, flight distance, rate, fall
+    vec4 view;  // x: see-through (no hidden skin, points turned away stay visible)
+} fx;
+
 const vec2 corners[6] = vec2[](vec2(-1, -1), vec2(1, -1), vec2(-1, 1),
                              vec2(-1, 1), vec2(1, -1), vec2(1, 1));
+
+// Places a point on screen after the effects have moved it. Every motion is
+// driven by the scene's own phase, so loops stay seamless.
+vec4 effectClip(vec3 position, vec3 viewNormal, inout float radiusPixels) {
+    float id = float(gl_InstanceIndex);
+    vec3 offset = vec3(0.0);
+    if (fx.drift.x > 0.0) {
+        // A slow flow field: neighbouring points wander together.
+        vec3 place = position * fx.drift.y;
+        float first = timePhase(fx.drift.z), second = timePhase(2.0 * fx.drift.z);
+        offset += 0.5 * fx.drift.x * vec3(sin(place.y + first) + sin(1.7 * place.z - second),
+                                          sin(place.z + second) + sin(1.7 * place.x + first),
+                                          sin(place.x - first) + sin(1.7 * place.y + second));
+    }
+    if (fx.drift.w > 0.0) {
+        // Jitter: every point trembles on its own.
+        vec3 own = vec3(hashScalar(id + 0.11), hashScalar(id + 7.3), hashScalar(id + 13.9));
+        offset += fx.drift.w * sin(TAU * own + timePhase(3.0 * fx.drift.z)
+                                             * (1.0 + floor(3.0 * own.yzx)));
+    }
+    // Slide along the surface or away from it, never under the hidden skin.
+    offset -= viewNormal * min(dot(offset, viewNormal), 0.0);
+    if (fx.shed.x > 0.0 && hashScalar(1.37 * id + 3.1) < fx.shed.x) {
+        // A shed point leaves along the normal, shrinking until it is gone,
+        // then grows back where it started.
+        float life = fract(timePhase(fx.shed.z) / TAU + hashScalar(id + 5.7));
+        float flight = smoothstep(0.0, 0.7, life);
+        float fade = life < 0.7 ? 1.0 - flight : smoothstep(0.7, 1.0, life);
+        if (life < 0.7) {
+            offset += flight * flight * (fx.shed.y * viewNormal - vec3(0.0, fx.shed.w, 0.0));
+        }
+        radiusPixels *= fade;
+        pointColor *= fade;
+    }
+    radiusPixels = max(radiusPixels, 0.05);
+    // The nested spheres keep the sign: their fragment shader reads a side from it.
+    if (fx.view.x > 0.5 && !nestedSphereMode()) {
+        pointFacing = 1.0;
+    }
+    return projectView(toView(position) + offset);
+}
 
 void main() {
     disc = corners[gl_VertexIndex];
@@ -36,7 +84,51 @@ void main() {
         // intersection before evaluating the animated hole mask.
         pointFacing = normal.z;
 
-        vec4 clip = projectPoint(position);
+        vec4 clip = effectClip(position, normal, radiusPixels);
+        clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
+        gl_Position = clip;
+        disc *= (radiusPixels + 0.65) / radiusPixels;
+        return;
+    }
+
+    if (archMode()) {
+        vec3 position, normal;
+        float pattern;
+        if (pc.motion.w > 0.5) {
+            // Arches: staggered rows that travel from the north foot to the south.
+            int rows = int(pc.points.y);
+            int columns = max(int(fract(pc.points.y) * 128.0 + 0.5), 1);
+            int perArch = rows * columns;
+            int arch = gl_InstanceIndex / perArch;
+            int sampleIndex = gl_InstanceIndex % perArch;
+            int row = sampleIndex / columns, column = sampleIndex % columns;
+            float material = (float(row) + 0.5 * float(column % 2)) / float(rows);
+            float along = fract(material + archFlow());
+            float around = TAU * float(column) / float(columns);
+            position = archPoint(along, around, float(arch));
+            normal = archNormal(along, around, float(arch));
+            pattern = archPattern(fract(material), 2.0 * around / PI);
+        } else {
+            // Sphere: a closed equal-area lattice that climbs from pole to pole.
+            int spherePoints = max(int(pc.points.x + 0.5), 1);
+            float material = (float(gl_InstanceIndex) + 0.5) / float(spherePoints);
+            uint turned = uint(gl_InstanceIndex) * uint(pc.points.w + 0.5) % uint(spherePoints);
+            float longitude = TAU * float(turned) / float(spherePoints);
+            normal = archSphereDirection(fract(material + archFlow()), longitude);
+            position = pc.shape.x * normal;
+            pattern = archPattern(material, pc.loop.z * longitude / TAU);
+        }
+        normal = toView(normal);
+        vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
+        float diffuse = max(dot(normal, light), 0.0);
+        float illumination = 0.10 + 0.90 * pow(diffuse, 0.8);
+        float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
+                           * mix(0.36, 1.0, illumination);
+        radiusPixels = max(radiusPixels, 0.30);
+        pointColor = (pattern < 0.5 ? pc.wave.rgb : pc.motion.rgb) * illumination * pc.look.z;
+        pointFacing = smoothstep(-0.015, 0.025, normal.z);
+
+        vec4 clip = effectClip(position, normal, radiusPixels);
         clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
         gl_Position = clip;
         disc *= (radiusPixels + 0.65) / radiusPixels;
@@ -84,19 +176,21 @@ void main() {
         pointColor = tint * illumination * pc.look.z;
         pointFacing = smoothstep(-0.015, 0.025, normal.z);
 
-        vec4 clip = projectPoint(position);
+        vec4 clip = effectClip(position, normal, radiusPixels);
         clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
         gl_Position = clip;
         disc *= (radiusPixels + 0.65) / radiusPixels;
         return;
     }
 
-    if (eversionMode() || sleeveMode() || morphMode() || ridgeMode()) {
+    if (eversionMode() || sleeveMode() || morphMode() || ridgeMode() || smaleMode()) {
         int pointCount = max(int(pc.points.x + 0.5), 1);
-        const float goldenAngle = 2.39996322973;
         // Equal-area samples of the cloth. Each point keeps its material coordinates.
         float material = (float(gl_InstanceIndex) + 0.5) / float(pointCount);
-        float longitude = goldenAngle * float(gl_InstanceIndex);
+        // The golden-angle turn in whole numbers (2^32 / golden ratio), so the
+        // angle stays small and exact however many points there are; a float
+        // product would be too coarse for the normals taken by differences.
+        float longitude = TAU * float(uint(gl_InstanceIndex) * 2654435769u) / 4294967296.0;
         if (pc.loop.z > 0.5) {
             // A whole-number step returns to the first point after the last one,
             // so the lattice has no seam where the material wraps around.
@@ -106,7 +200,15 @@ void main() {
         vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
         vec3 position, normal, tint;
         float diffuse;
-        if (ridgeMode()) {
+        if (smaleMode()) {
+            // A Fibonacci sphere: equal areas while the sphere is round.
+            float latitude = asin(clamp(1.0 - 2.0 * material, -1.0, 1.0));
+            position = smalePoint(latitude, longitude);
+            normal = toView(smaleNormal(latitude, longitude));
+            diffuse = abs(dot(normal, light));
+            // Each side of the material keeps its colour through the eversion.
+            tint = normal.z > 0.0 ? pc.wave.rgb : pc.motion.rgb;
+        } else if (ridgeMode()) {
             float angle = vortexAngle(fract(material + timePhase(1.0) / TAU));
             int link = int(pc.style.x + 0.5);
             position = ridgeLinkPoint(ridgePoint(longitude, angle), link);
@@ -139,11 +241,12 @@ void main() {
                            * mix(0.36, 1.0, illumination);
         radiusPixels = max(radiusPixels, 0.30);
         pointColor = tint * illumination * pc.look.z;
-        // The punctured sphere shows both sides of its cloth. The other bodies
-        // are closed, so points turned away would only bleed past the silhouette.
-        pointFacing = eversionMode() ? 1.0 : smoothstep(-0.015, 0.025, normal.z);
+        // The punctured and the everting sphere show both sides of their cloth. The
+        // other bodies stay closed, so points turned away would only bleed past
+        // the silhouette.
+        pointFacing = eversionMode() || smaleMode() ? 1.0 : smoothstep(-0.015, 0.025, normal.z);
 
-        vec4 clip = projectPoint(position);
+        vec4 clip = effectClip(position, normal, radiusPixels);
         clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
         gl_Position = clip;
         disc *= (radiusPixels + 0.65) / radiusPixels;
@@ -185,7 +288,7 @@ void main() {
     pointColor = tint * illumination * pc.look.z;
     pointFacing = smoothstep(-0.015, 0.025, normal.z);
 
-    vec4 clip = projectPoint(position);
+    vec4 clip = effectClip(position, normal, radiusPixels);
     clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
     gl_Position = clip;
     // Keep the antialias fringe one physical pixel wide at every viewport size.

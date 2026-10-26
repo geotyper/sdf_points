@@ -21,6 +21,13 @@ public:
 private:
     static constexpr VkFormat targetFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
+    // Mirrors the PointEffects uniform block of the point shader (std140).
+    struct EffectsBlock {
+        float drift[4];
+        float shed[4];
+        float view[4];
+    };
+
     void createRenderTarget(AppContext& context, VkExtent2D extent);
     void destroyRenderTarget();
     [[nodiscard]] float latticeStep(int pointCount);
@@ -35,6 +42,7 @@ private:
     UniquePipeline surfacePipeline_;
     ImageResource target_;
     ImageResource depth_;
+    BufferResource effects_;
     VkFormat depthFormat_{VK_FORMAT_UNDEFINED};
     VkImageLayout depthLayout_{VK_IMAGE_LAYOUT_UNDEFINED};
     VkImageLayout targetLayout_{VK_IMAGE_LAYOUT_UNDEFINED};

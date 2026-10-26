@@ -79,7 +79,8 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                        "Orbital bloom", "Nested spheres", "Punctured sphere",
                                        "Sleeve",        "Morphing sleeve", "Vortex ring",
                                        "Ridged torus",  "Ridged braid",    "Tentacle sphere",
-                                       "Bumpy torus",   "Torus chain"};
+                                       "Bumpy torus",   "Torus chain",     "Sphere eversion",
+                                       "Arched sphere"};
     const auto geometryCount = static_cast<int>(geometryNames.size());
     braid.geometryMode = std::clamp(braid.geometryMode, 0, geometryCount - 1);
     if (ImGui::BeginCombo("Geometry",
@@ -94,11 +95,63 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             }
         };
         group("Braids", {0, 1, 2, 3, 10});
-        group("Spheres", {4, 11});
-        group("Eversion", {5, 6, 7, 8, 9, 12, 13});
+        group("Spheres", {4, 11, 15});
+        group("Eversion", {5, 14, 6, 7, 8, 9, 12, 13});
         ImGui::EndCombo();
     }
-    if (braid.geometryMode == 12 || braid.geometryMode == 13) {
+    if (braid.geometryMode == 15) {
+        auto& arched = state_.archedSphere;
+        ImGui::Checkbox("Pause", &arched.paused);
+        ImGui::SliderFloat("Flow speed", &arched.animationSpeed, 0.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Spin", &arched.spin, -1.0F, 1.0F, "%.2f");
+        ImGui::SliderInt("Arches", &arched.arches, 1, 16);
+        ImGui::SliderFloat("Arch height", &arched.archHeight, 0.10F, 1.00F, "%.2f");
+        ImGui::SliderFloat("Tube radius", &arched.tubeRadius, 0.03F, 0.20F, "%.3f");
+        ImGui::SliderFloat("Twist", &arched.twist, -1.0F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Turns around the sphere an arch makes on its way down.");
+        }
+        ImGui::SliderInt("Bands", &arched.bands, 1, 24);
+        ImGui::Checkbox("Checkerboard", &arched.checker);
+        ImGui::BeginDisabled(!arched.checker);
+        ImGui::SliderInt("Sectors", &arched.sectors, 2, 32);
+        ImGui::EndDisabled();
+        ImGui::SliderFloat("Sphere radius", &arched.radius, 0.35F, 0.90F, "%.2f");
+        ImGui::SliderInt("Sphere points", &arched.spherePoints, 2000, 40000);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Arches get rows and columns of points with the same spacing.");
+        }
+        ImGui::SliderFloat("Point radius (700px)", &arched.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &arched.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &arched.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &arched.tilt, -90.0F, 90.0F);
+        ImGui::ColorEdit3("First color", arched.firstColor.data());
+        ImGui::ColorEdit3("Second color", arched.secondColor.data());
+        if (ImGui::Button("Reset arches")) {
+            arched = ArchedSphereSettings{};
+        }
+    } else if (braid.geometryMode == 14) {
+        auto& sphere = state_.sphereEversion;
+        ImGui::TextDisabled("Bednorz & Bednorz, arXiv:1711.10466");
+        ImGui::Checkbox("Pause", &sphere.paused);
+        ImGui::SliderFloat("Eversion speed", &sphere.animationSpeed, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("End hold", &sphere.endHold, 0.0F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("How long the two round spheres linger before turning back.");
+        }
+        ImGui::SliderFloat("Spin", &sphere.spin, -1.0F, 1.0F, "%.2f");
+        ImGui::SliderFloat("Radius", &sphere.radius, 0.35F, 0.80F, "%.2f");
+        ImGui::SliderInt("Points", &sphere.pointCount, 2000, 60000);
+        ImGui::SliderFloat("Point radius (700px)", &sphere.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &sphere.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &sphere.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &sphere.tilt, -90.0F, 90.0F);
+        ImGui::ColorEdit3("First side", sphere.firstColor.data());
+        ImGui::ColorEdit3("Second side", sphere.secondColor.data());
+        if (ImGui::Button("Reset eversion")) {
+            sphere = SphereEversionSettings{};
+        }
+    } else if (braid.geometryMode == 12 || braid.geometryMode == 13) {
         const bool chain = braid.geometryMode == 13;
         auto& torus = chain ? state_.torusChain : state_.bumpyTorus;
         ImGui::Checkbox("Pause", &torus.paused);
@@ -466,6 +519,60 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::TextUnformatted(state_.blur.ready ? "Result ready" : "Waiting");
+    ImGui::End();
+
+    ImGui::SetNextWindowPos(ImVec2(840.0F, 60.0F), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(320.0F, 420.0F), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Effects")) {
+        auto& effects = state_.effects;
+        ImGui::TextDisabled("Applied to the points of every geometry.");
+        ImGui::Checkbox("See-through", &effects.seeThrough);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Drops the hidden black skin behind the points:\n"
+                              "every point is drawn and they simply overlap.");
+        }
+        ImGui::SeparatorText("Drift");
+        ImGui::Checkbox("Drift and jitter", &effects.drift);
+        ImGui::BeginDisabled(!effects.drift);
+        ImGui::SliderFloat("Drift amount", &effects.driftAmount, 0.0F, 0.15F, "%.3f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Neighbouring points wander together in a slow flow.");
+        }
+        ImGui::SliderFloat("Drift scale", &effects.driftScale, 0.5F, 12.0F, "%.1f");
+        ImGui::SliderFloat("Jitter", &effects.jitter, 0.0F, 0.05F, "%.3f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Every point trembles on its own.");
+        }
+        ImGui::SliderFloat("Drift speed", &effects.driftSpeed, 0.0F, 6.0F, "%.2f");
+        ImGui::EndDisabled();
+        ImGui::SeparatorText("Shedding");
+        ImGui::Checkbox("Shed points", &effects.shed);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Some points leave the surface, shrink away\n"
+                              "and grow back where they started.");
+        }
+        ImGui::BeginDisabled(!effects.shed);
+        ImGui::SliderFloat("Share of points", &effects.shedShare, 0.0F, 1.0F, "%.2f");
+        ImGui::SliderFloat("Flight distance", &effects.shedDistance, 0.0F, 1.2F, "%.2f");
+        ImGui::SliderFloat("Fall", &effects.shedFall, -0.8F, 0.8F, "%.2f");
+        ImGui::SliderFloat("Shed rate", &effects.shedRate, 0.0F, 6.0F, "%.2f");
+        ImGui::EndDisabled();
+        ImGui::SeparatorText("Trails");
+        ImGui::Checkbox("Trails", &effects.trails);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Each point is followed by smaller, dimmer copies\n"
+                              "of itself from a moment ago. Costs one more pass\n"
+                              "over the points per copy.");
+        }
+        ImGui::BeginDisabled(!effects.trails);
+        ImGui::SliderInt("Trail length", &effects.trailCount, 1, 16);
+        ImGui::SliderFloat("Trail spacing", &effects.trailSpacing, 0.002F, 0.10F, "%.3f");
+        ImGui::SliderFloat("Trail fade", &effects.trailFade, 0.40F, 0.98F, "%.2f");
+        ImGui::EndDisabled();
+        if (ImGui::Button("Reset effects")) {
+            effects = PointEffects{};
+        }
+    }
     ImGui::End();
 
     ImGui::SetNextWindowPos(ImVec2(360.0F, 20.0F), ImGuiCond_FirstUseEver);

@@ -31,7 +31,10 @@ void printHelp(const char* executable) {
               << "  --loop-driver wave|flow|rotation  what the N cycles count (default: wave,\n"
               << "                                  or flow for orbital bloom / nested spheres /\n"
               << "                                  eversion)\n"
-              << "  --screenshot                    save one PNG at startup, then exit\n";
+              << "  --screenshot                    save one PNG at startup, then exit\n"
+              << "\nPoint effects (also in the Effects window):\n"
+              << "  --effects LIST                  comma-separated: drift, jitter, shed, trails,\n"
+              << "                                  see-through\n";
 }
 
 std::string_view requireValue(const int argc, char** argv, int& index) {
@@ -63,6 +66,7 @@ int main(const int argc, char** argv) {
 #endif
         vkexp::CaptureOptions captureOptions;
         captureOptions.outputDirectory = VKEXP_CAPTURE_DIR;
+        vkexp::PointEffects effects;
 
         for (int i = 1; i < argc; ++i) {
             const std::string_view argument = argv[i];
@@ -113,6 +117,30 @@ int main(const int argc, char** argv) {
                 } else {
                     throw std::runtime_error("--loop-driver expects wave, flow or rotation");
                 }
+            } else if (argument == "--effects") {
+                std::string_view list = requireValue(argc, argv, i);
+                while (!list.empty()) {
+                    const std::size_t comma = list.find(',');
+                    const std::string_view name = list.substr(0, comma);
+                    if (name == "drift") {
+                        effects.drift = true;
+                    } else if (name == "jitter") {
+                        effects.drift = true;
+                        effects.driftAmount = 0.0F;
+                        effects.jitter = 0.012F;
+                    } else if (name == "shed") {
+                        effects.shed = true;
+                    } else if (name == "trails") {
+                        effects.trails = true;
+                    } else if (name == "see-through") {
+                        effects.seeThrough = true;
+                    } else {
+                        throw std::runtime_error(
+                            "--effects expects drift, jitter, shed, trails or see-through");
+                    }
+                    list = comma == std::string_view::npos ? std::string_view{}
+                                                           : list.substr(comma + 1);
+                }
             } else if (argument == "--screenshot") {
                 captureOptions.exitAfterScreenshot = true;
             } else if (argument == "--list-presets") {
@@ -130,6 +158,7 @@ int main(const int argc, char** argv) {
 
         presets.loadWindowPreset(VKEXP_WINDOW_PRESET);
         vkexp::DemoState state{presets.require(presetName)};
+        state.effects = effects;
         vkexp::Application app{vkexp::ApplicationConfig{
             state.preset.windowWidth,
             state.preset.windowHeight,

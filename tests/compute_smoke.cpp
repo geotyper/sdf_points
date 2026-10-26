@@ -575,6 +575,67 @@ void runBraidPeriodicity(vkexp::HeadlessComputeContext& context) {
     if (!(gap > 0.1F)) {
         throw std::runtime_error("Torus chain links touch");
     }
+
+    // Sphere eversion: it starts and ends as a round sphere, every point ends
+    // opposite to where it started (which is what swaps the two sides), and the
+    // skin stays finite and inside its projection bound on the way.
+    constexpr float evertingRadius = 0.62F;
+    settings = {700, 700, 0, 0, evertingRadius, 0.5F, 0, 0, 40000, 1, 1.3F, 1, 0.45F, 0.18F, 1.2F, 0,
+                -1,  -1,  -1, 14, 1, 0.62F, 0.16F, 0, 0.14F, 0.58F, 1, 0, 0, 0, 0, 0};
+    const auto roundStart = sample();
+    settings[2] = pi;
+    const auto roundEnd = sample();
+    for (std::size_t value = 0; value < floatCount; value += 8) {
+        const float reach = std::hypot(roundStart[value], roundStart[value + 1], roundStart[value + 2]);
+        if (!(std::abs(reach - evertingRadius) < 0.002F)) {
+            throw std::runtime_error("Sphere eversion does not start as a round sphere");
+        }
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            if (!(std::abs(roundEnd[value + axis] + roundStart[value + axis]) < 0.003F)) {
+                throw std::runtime_error("Sphere eversion does not end as the opposite sphere");
+            }
+        }
+    }
+    for (float phase : {0.4F, 0.9F, 1.2F, 1.5708F, 2.0F, 2.6F}) {
+        settings[2] = phase;
+        const auto skin = sample();
+        for (std::size_t value = 0; value < floatCount; value += 8) {
+            const float reach = std::hypot(skin[value], skin[value + 1], skin[value + 2]);
+            if (!(reach < evertingRadius * 1.98F)) {
+                throw std::runtime_error("Sphere eversion leaves its projection bound");
+            }
+        }
+    }
+
+    // Arched sphere: the probe's strand 0 is the sphere and strands 1 and 2 are
+    // arches. Arches keep their tube around a centreline that starts and ends on
+    // the sphere and rises above it in between.
+    constexpr float archedRadius = 0.60F;
+    constexpr float archHeight = 0.55F;
+    constexpr float archTube = 0.09F;
+    settings = {700, 700, 0, 0, archedRadius, archHeight, archTube, 6, 16000, 60.0F + 12.0F / 128.0F,
+                1.4F, 9889, 0.35F, 0.18F, 1.2F, 0.25F, -1, -1, -1, 15, 1, 0.62F, 0.16F, 0,
+                0.14F, 0.58F, 1, 0, 0, 8, 12, 0};
+    const auto arches = sample();
+    bool archRises = false;
+    for (std::size_t point = 0; point < 1024; ++point) {
+        const std::size_t at = point * 8;
+        const float reach = std::hypot(arches[at], arches[at + 1], arches[at + 2]);
+        if ((point / 16) % 3 == 0) {
+            if (!(std::abs(reach - archedRadius) < 0.001F)) {
+                throw std::runtime_error("Arched sphere body is not a sphere");
+            }
+        } else {
+            if (!(reach > archedRadius - archTube - 0.001F) ||
+                !(reach < archedRadius + archHeight + archTube + 0.001F)) {
+                throw std::runtime_error("Arched sphere arch leaves its range");
+            }
+            archRises = archRises || reach > archedRadius + 0.8F * archHeight;
+        }
+    }
+    if (!archRises) {
+        throw std::runtime_error("Arched sphere arches do not rise above the sphere");
+    }
 }
 
 int run() {
