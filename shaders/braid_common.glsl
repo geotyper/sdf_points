@@ -28,7 +28,12 @@ const int MORPH_SEGMENTS = 64;
 float timePhase(float frequency) {
     float cycles = pc.loop.x;
     float rounded = cycles > 0.0 ? round(frequency * cycles) / cycles : frequency;
-    return mod(pc.view.z * rounded, TAU);
+    float wrapped = mod(pc.view.z * rounded, TAU);
+    // Passed through sine, cosine and arctangent so the optimiser cannot merge
+    // the wrap into the sums that use the phase: after a long run that would
+    // swallow the tiny steps the normals are differenced with.
+    float phase = atan(sin(wrapped), cos(wrapped));
+    return phase < 0.0 ? phase + TAU : phase;
 }
 
 bool nestedSphereMode() {
@@ -56,7 +61,15 @@ bool ridgeMode() {
 }
 
 bool tentacleMode() {
-    return pc.style.w > 10.5;
+    return pc.style.w > 10.5 && pc.style.w < 11.5;
+}
+
+bool smaleMode() {
+    return pc.style.w > 13.5 && pc.style.w < 14.5;
+}
+
+bool archMode() {
+    return pc.style.w > 14.5;
 }
 
 float hashScalar(float value) {
@@ -655,6 +668,192 @@ float tentacleSpan() {
     return (pc.shape.x * (1.0 + pc.look.w) + pc.shape.y) * 1.10;
 }
 
+// Sphere eversion reuses the push constants: shape = radius, end hold;
+// wave = colour of one side and spin; motion = colour of the other side.
+//
+// A closed sphere turned inside out through itself, with no hole, crease or
+// pinch: A. and W. Bednorz, "Analytic sphere eversion using ruled surfaces"
+// (arXiv:1711.10466), for n = 2 and Q = 2/3. The poles are pushed through
+// each other into a wormhole whose throat is a ruled surface; the throat
+// twists through the halfway surface, where neither side is preferred, and
+// the same steps then run backwards on the other side.
+const float SMALE_Q = 2.0 / 3.0;
+const float SMALE_OMEGA = 2.0;
+// Radius of the round sphere the formulas start and end with.
+const float SMALE_SPHERE = 0.8164966;
+
+// Closes the infinite cylinder into a sphere: damping far from the axis, then
+// a stereographic-like inversion (the paper's eta = beta = 1).
+vec3 smaleClose(vec3 point, float xi, float alpha) {
+    float damping = xi + dot(point.xy, point.xy);
+    vec2 planar = point.xy * pow(damping, -0.25);
+    float height = point.z / damping;
+    float reach = dot(planar, planar);
+    float gamma = 2.0 * sqrt(alpha);
+    float denominator = alpha + reach;
+    float growth = exp(gamma * height);
+    // (exp(gamma * height) - 1) / gamma, which stays finite as gamma goes to zero.
+    float scaled = gamma * height;
+    float lift = abs(scaled) < 0.01 ? height * (1.0 + scaled * (0.5 + scaled / 6.0))
+                                    : (growth - 1.0) / gamma;
+    return vec3(planar * growth / denominator,
+                (alpha - reach) / denominator * lift
+                    + sqrt(alpha) * (1.0 - reach) / (denominator * (alpha + 1.0)));
+}
+
+// The wormhole: latitude spreads along the ruling, which runs off to infinity
+// at both poles.
+vec3 smaleWormhole(float latitude, float longitude, float time, float q, float xi, float alpha) {
+    float cosine = max(cos(latitude), 1e-3);
+    float ruling = SMALE_OMEGA * sin(latitude) / (cosine * cosine);
+    float p = 1.0 - abs(q * time);
+    vec2 turn = vec2(cos(longitude), sin(longitude));
+    vec3 point = vec3(time * turn.x + p * turn.y - ruling * turn.y,
+                      time * turn.y + p * turn.x + ruling * turn.x,
+                      ruling * sin(2.0 * longitude) - 0.5 * time * cos(2.0 * longitude)
+                          - q * time * ruling);
+    return smaleClose(point, xi, alpha);
+}
+
+// Between the round sphere (unfolding 0) and the unfolded wormhole (1).
+vec3 smaleUnfold(float latitude, float longitude, float time, float unfolding) {
+    float cosine = cos(latitude), sine = sin(latitude);
+    float square = cosine * cosine;
+    vec2 turn = vec2(cos(longitude), sin(longitude));
+    float blend = 1.0 - unfolding + unfolding * square;
+    float swing = unfolding * SMALE_OMEGA * sine;
+    vec2 planar = vec2(time * blend * turn.x - swing * turn.y, time * blend * turn.y + swing * turn.x);
+    float spread = time * time * blend * blend + swing * swing;
+    float height = unfolding * (SMALE_OMEGA * sine * (sin(2.0 * longitude) - SMALE_Q * time) * square
+                              - 0.5 * time * cos(2.0 * longitude) * square * square)
+                 - (1.0 - unfolding) * time * sqrt(abs(time)) * sine;
+    return vec3(planar * cosine / pow(spread, 0.75), -height / spread);
+}
+
+// Progress 0..1 through the whole eversion; the second half mirrors the first.
+float smaleProgress() {
+    float swing = cos(timePhase(1.0));
+    // Ease towards both ends so the round spheres linger.
+    swing = mix(swing, swing * (1.5 - 0.5 * swing * swing), pc.shape.y);
+    return 0.5 - 0.5 * swing;
+}
+
+vec3 smalePoint(float latitude, float longitude) {
+    float progress = smaleProgress();
+    float side = progress < 0.5 ? -1.0 : 1.0;
+    float end = side / SMALE_Q;
+    // Stage lengths as shares of one half: unfold the sphere, open the
+    // inverted wormhole, twist its throat shut, pass through the halfway surface.
+    float stage = (1.0 - abs(2.0 * progress - 1.0)) * 0.62;
+    vec3 point;
+    if (stage < 0.16) {
+        point = smaleUnfold(latitude, longitude, end, stage / 0.16);
+    } else if (stage < 0.28) {
+        // Squared, because the opening moves with the square root of alpha.
+        float opening = (stage - 0.16) / 0.12;
+        opening *= opening;
+        point = smaleWormhole(latitude, longitude, end, SMALE_Q, opening, opening);
+    } else if (stage < 0.38) {
+        point = smaleWormhole(latitude, longitude, end,
+                              SMALE_Q * (1.0 - (stage - 0.28) / 0.10), 1.0, 1.0);
+    } else {
+        point = smaleWormhole(latitude, longitude, end * (1.0 - min((stage - 0.38) / 0.24, 1.0)),
+                              0.0, 1.0, 1.0);
+    }
+    // The paper's axis of symmetry becomes the vertical one.
+    point = point.xzy * pc.shape.x / SMALE_SPHERE;
+    return rotateAroundAxis(point, vec3(0.0, 1.0, 0.0), timePhase(pc.wave.w));
+}
+
+// Normal of one side of the material; it ends up pointing the other way.
+vec3 smaleNormal(float latitude, float longitude) {
+    vec3 north = smalePoint(latitude + 0.002, longitude) - smalePoint(latitude - 0.002, longitude);
+    vec3 east = smalePoint(latitude, longitude + 0.002) - smalePoint(latitude, longitude - 0.002);
+    return normalize(cross(north, east));
+}
+
+float smaleSpan() {
+    // Largest extent of any stage, measured in sphere radii.
+    return pc.shape.x * 1.97 * 1.08;
+}
+
+// Arched sphere reuses the push constants: shape = sphere radius, arch height,
+// tube radius, arch count; points = sphere samples, arch rows + columns / 128,
+// pixel radius, closed lattice step; look.w = twist; wave = first colour and
+// spin; motion = second colour and, per draw, which part is drawn (0 sphere,
+// 1 arches); loop.y = bands, loop.z = checker sectors (0 = plain bands).
+//
+// A fountain that feeds itself: the cloth climbs the sphere from the south
+// pole to the north, pours out through a crown of arches, runs down them
+// outside and re-enters around the south pole. Bands painted on the material
+// show the circulation.
+// How much wider than its tube an arch is where it meets the sphere.
+const float ARCH_FLARE = 1.2;
+
+float archFoot() {
+    // Far enough from the pole for the flared feet to stand side by side.
+    return asin(clamp(2.2 * pc.shape.w * pc.shape.z / (PI * pc.shape.x), 0.12, 0.9));
+}
+
+float archFlow() {
+    return timePhase(1.0) / TAU;
+}
+
+// Centreline of an arch, 0 at its north foot and 1 at its south foot.
+vec3 archCentre(float along, float arch) {
+    float foot = archFoot();
+    // Eased, so the arch leaves and meets the sphere at a right angle.
+    float travel = along * along * (3.0 - 2.0 * along);
+    float colatitude = foot + (PI - 2.0 * foot) * travel;
+    float longitude = TAU * (arch / pc.shape.w + pc.look.w * travel) + timePhase(pc.wave.w);
+    float reach = pc.shape.x + pc.shape.y * sin(PI * along);
+    return reach * vec3(sin(colatitude) * cos(longitude), cos(colatitude),
+                        sin(colatitude) * sin(longitude));
+}
+
+vec3 archPoint(float along, float around, float arch) {
+    vec3 centre = archCentre(along, arch);
+    vec3 tangent = normalize(archCentre(along + 0.001, arch) - archCentre(along - 0.001, arch));
+    vec3 outward = normalize(centre);
+    vec3 x = normalize(outward - tangent * dot(outward, tangent));
+    vec3 y = cross(tangent, x);
+    // The tube flares like a root as it nears the sphere and grows out of it.
+    float above = pc.shape.y * sin(PI * along);
+    float radius = pc.shape.z * (1.0 + ARCH_FLARE * exp(-above / (0.9 * pc.shape.z)));
+    return centre + radius * (x * cos(around) + y * sin(around));
+}
+
+vec3 archNormal(float along, float around, float arch) {
+    vec3 lengthwise = archPoint(along + 0.001, around, arch) - archPoint(along - 0.001, around, arch);
+    vec3 crosswise = archPoint(along, around + 0.01, arch) - archPoint(along, around - 0.01, arch);
+    return normalize(cross(crosswise, lengthwise));
+}
+
+// Direction on the sphere for a share of its area counted from the south pole.
+vec3 archSphereDirection(float areaShare, float longitude) {
+    float height = 2.0 * areaShare - 1.0;
+    float ring = sqrt(max(1.0 - height * height, 0.0));
+    longitude += timePhase(pc.wave.w);
+    return vec3(ring * cos(longitude), height, ring * sin(longitude));
+}
+
+// Which of the two colours this piece of material has: bands across the flow,
+// optionally cut into sectors for a checkerboard.
+float archPattern(float along, float sector) {
+    float band = floor(along * pc.loop.y);
+    return mod(band + (pc.loop.z > 0.5 ? floor(sector) : 0.0), 2.0);
+}
+
+// The sphere (part 0) or one of the arches (parts 1..) on a regular grid.
+vec3 archGridPoint(float u, float v, float part) {
+    return part < 0.5 ? pc.shape.x * localSphereDirection(u, v)
+                      : archPoint(u / TAU, v, part - 1.0);
+}
+
+float archSpan() {
+    return (pc.shape.x + max(pc.shape.y + pc.shape.z, (1.0 + ARCH_FLARE) * pc.shape.z)) * 1.10;
+}
+
 float releaseEnvelope(float u) {
     // Smooth and periodic even as the wave crosses the material seam at 2*pi.
     float delta = u - timePhase(pc.wave.z);
@@ -842,6 +1041,9 @@ vec3 surfacePoint(float u, float v, float strand) {
     if (tentacleMode()) {
         return tentacleBodyPoint(localSphereDirection(u, v));
     }
+    if (smaleMode()) {
+        return smalePoint(0.5 * (v - PI), u);
+    }
     vec3 center, tangent, x, y;
     float radius;
     tubeFrame(u, strand, center, tangent, x, y, radius);
@@ -877,8 +1079,8 @@ vec3 fromView(vec3 p) {
     return p;
 }
 
-vec4 projectPoint(vec3 p) {
-    p = toView(p);
+// Projects a point already turned into view space.
+vec4 projectView(vec3 p) {
     // Bound all pulse phases and rotations without breathing the camera zoom.
     float ringBound = pc.shape.x * pow(2.0, 0.5 - 1.0 / pc.wave.w);
     float span = (ringBound + pc.shape.y * (1.0 + 0.32 * pc.wave.x)
@@ -916,6 +1118,16 @@ vec4 projectPoint(vec3 p) {
     if (tentacleMode()) {
         span = tentacleSpan();
     }
+    if (smaleMode()) {
+        span = smaleSpan();
+    }
+    if (archMode()) {
+        span = archSpan();
+    }
     vec2 scale = min(pc.view.x, pc.view.y) / pc.view.xy;
     return vec4(p.xy * vec2(1.0, -1.0) * scale / span, (4.0 - p.z) / 8.0, 1.0);
+}
+
+vec4 projectPoint(vec3 p) {
+    return projectView(toView(p));
 }

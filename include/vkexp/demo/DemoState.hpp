@@ -35,7 +35,7 @@ struct ComputeOutput {
 };
 
 struct BraidSettings {
-    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain
+    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere
     bool paused{};
     bool autoRotate{false};
     bool limitTubeOverlap{false};
@@ -259,6 +259,62 @@ struct BumpyTorusSettings {
     return 0.46F * settings.ringRadius / (1.0F + 0.45F * settings.bumpHeight);
 }
 
+struct SphereEversionSettings {
+    bool paused{};
+    float animationSpeed{0.22F};
+    float endHold{0.5F};
+    float spin{0.0F};
+    float radius{0.62F};
+    float pointSize{1.30F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.45F};
+    int pointCount{40000};
+    std::array<float, 3> firstColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> secondColor{0.14F, 0.58F, 1.00F};
+};
+
+struct ArchedSphereSettings {
+    bool paused{};
+    float animationSpeed{0.30F};
+    float spin{0.05F};
+    float radius{0.60F};
+    float archHeight{0.55F};
+    float tubeRadius{0.09F};
+    float twist{0.25F};
+    float pointSize{1.40F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.35F};
+    bool checker{true};
+    int arches{6};
+    int bands{8};
+    int sectors{12};
+    int spherePoints{16000};
+    std::array<float, 3> firstColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> secondColor{0.14F, 0.58F, 1.00F};
+};
+
+// Effects that apply to the points of every geometry.
+struct PointEffects {
+    bool drift{};
+    float driftAmount{0.03F};
+    float driftScale{3.0F};
+    float jitter{0.0F};
+    float driftSpeed{1.0F};
+    bool shed{};
+    float shedShare{0.12F};
+    float shedDistance{0.35F};
+    float shedRate{1.0F};
+    float shedFall{0.0F};
+    // No hidden skin behind the points: they all show and overlap each other.
+    bool seeThrough{};
+    bool trails{};
+    int trailCount{6};
+    float trailSpacing{0.02F}; // in units of the scene's phase
+    float trailFade{0.75F};
+};
+
 struct StrandPalette {
     bool enabled{false};
     std::array<std::array<float, 3>, 5> colors{{
@@ -304,6 +360,9 @@ struct DemoState {
     TentacleSettings tentacle;
     BumpyTorusSettings bumpyTorus;
     BumpyTorusSettings torusChain{torusChainDefaults()};
+    SphereEversionSettings sphereEversion;
+    ArchedSphereSettings archedSphere;
+    PointEffects effects;
     StrandPalette palette;
     LoopSettings loop;
 };
@@ -346,6 +405,12 @@ struct DemoState {
     } else if (state.braid.geometryMode == 13) {
         inputs.paused = state.torusChain.paused;
         inputs.animationSpeed = state.torusChain.animationSpeed;
+    } else if (state.braid.geometryMode == 14) {
+        inputs.paused = state.sphereEversion.paused;
+        inputs.animationSpeed = state.sphereEversion.animationSpeed;
+    } else if (state.braid.geometryMode == 15) {
+        inputs.paused = state.archedSphere.paused;
+        inputs.animationSpeed = state.archedSphere.animationSpeed;
     } else {
         inputs.paused = state.braid.paused;
         inputs.animationSpeed = state.braid.animationSpeed;

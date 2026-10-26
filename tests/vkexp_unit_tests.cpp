@@ -2,6 +2,7 @@
 #include "vkexp/capture/CaptureWriter.hpp"
 #include "vkexp/compute/ComputeResources.hpp"
 #include "vkexp/core/FrameClock.hpp"
+#include "vkexp/demo/ArchLattice.hpp"
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/LoopPlan.hpp"
 #include "vkexp/demo/PointLattice.hpp"
@@ -70,7 +71,7 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 13, "Built-in preset count");
+    check(registry.all().size() == 15, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
     check(registry.require("nested-spheres").initialGeometryMode == 4,
@@ -592,6 +593,24 @@ void testTentaclePatch() {
           "Bumpy torus loop label");
     check(registry.require("torus-chain").initialGeometryMode == 13,
           "Torus chain initial geometry");
+    check(registry.require("sphere-eversion").initialGeometryMode == 14,
+          "Sphere eversion initial geometry");
+    check(vkexp::loopDriverLabel(14, vkexp::LoopDriver::Flow) == "Eversion cycles",
+          "Sphere eversion loop label");
+    check(registry.require("arched-sphere").initialGeometryMode == 15,
+          "Arched sphere initial geometry");
+    check(vkexp::loopDriverLabel(15, vkexp::LoopDriver::Flow) == "Fountain laps",
+          "Arched sphere loop label");
+    // A flat, untwisted arch runs along a meridian between its two feet.
+    const double foot = vkexp::archFootAngle(0.6, 0.09, 6);
+    check(std::abs(vkexp::archLength(0.6, 0.0, 0.09, 6, 0.0) -
+                   0.6 * (3.14159265358979323846 - 2.0 * foot)) < 1e-3,
+          "Flat arch follows a meridian");
+    check(vkexp::archLength(0.6, 0.55, 0.09, 6, 0.25) > vkexp::archLength(0.6, 0.0, 0.09, 6, 0.0),
+          "Height and twist lengthen an arch");
+    const vkexp::ArchLattice arch = vkexp::archLattice(16000, 0.6, 0.55, 0.09, 6, 0.25);
+    check(arch.columns % 2 == 0 && arch.columns >= 6 && arch.rows >= 16,
+          "Arch lattice is staggered and populated");
     const vkexp::BumpyTorusSettings chain = vkexp::torusChainDefaults();
     check(chain.tubeRadius <= vkexp::torusChainTubeLimit(chain),
           "Chain links fit through each other by default");

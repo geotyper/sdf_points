@@ -1,6 +1,7 @@
 #include "vkexp/graphics/GraphicsModule.hpp"
 
 #include "vkexp/core/VulkanContext.hpp"
+#include "vkexp/demo/ArchLattice.hpp"
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
@@ -38,21 +39,27 @@ void GraphicsModule::onAttach(AppContext& context) {
         throw std::runtime_error("No supported depth attachment format");
     }
 
-    const VkDescriptorSetLayoutBinding depthBinding{
-        0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-        VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    const std::array setBindings{
+        VkDescriptorSetLayoutBinding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                                     VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        VkDescriptorSetLayoutBinding{1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+                                     VK_SHADER_STAGE_VERTEX_BIT, nullptr},
+    };
     VkDescriptorSetLayoutCreateInfo setInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    setInfo.bindingCount = 1;
-    setInfo.pBindings = &depthBinding;
+    setInfo.bindingCount = static_cast<std::uint32_t>(setBindings.size());
+    setInfo.pBindings = setBindings.data();
     if (vkCreateDescriptorSetLayout(device, &setInfo, nullptr, depthSetLayout_.put(device)) !=
         VK_SUCCESS) {
         throw std::runtime_error("Unable to create point visibility descriptor layout");
     }
-    const VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+    const std::array poolSizes{
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+    };
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     poolInfo.maxSets = 1;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.poolSizeCount = static_cast<std::uint32_t>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, depthPool_.put(device)) != VK_SUCCESS) {
         throw std::runtime_error("Unable to create point visibility descriptor pool");
     }
@@ -64,6 +71,21 @@ void GraphicsModule::onAttach(AppContext& context) {
     if (vkAllocateDescriptorSets(device, &allocate, &depthSet_) != VK_SUCCESS) {
         throw std::runtime_error("Unable to allocate point visibility descriptor");
     }
+    // Point effects live in a small uniform buffer: the push constant block is full.
+    effects_.create(context.vulkan.physicalDevice(), device,
+                    BufferResourceConfig{sizeof(EffectsBlock), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT});
+    const EffectsBlock noEffects{};
+    effects_.write(&noEffects, sizeof(noEffects));
+    const VkDescriptorBufferInfo effectsInfo{effects_.buffer(), 0, sizeof(EffectsBlock)};
+    VkWriteDescriptorSet effectsWrite{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    effectsWrite.dstSet = depthSet_;
+    effectsWrite.dstBinding = 1;
+    effectsWrite.descriptorCount = 1;
+    effectsWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    effectsWrite.pBufferInfo = &effectsInfo;
+    vkUpdateDescriptorSets(device, 1, &effectsWrite, 0, nullptr);
 
     constexpr VkPushConstantRange pushConstants{
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32U * sizeof(float)};
@@ -265,6 +287,14 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             if (!state_.torusChain.paused) {
                 eversionTime_ += frame.deltaSeconds * state_.torusChain.animationSpeed;
             }
+        } else if (state_.braid.geometryMode == 14) {
+            if (!state_.sphereEversion.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.sphereEversion.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 15) {
+            if (!state_.archedSphere.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.archedSphere.animationSpeed;
+            }
         } else if (!state_.braid.paused) {
             const float phaseStep = frame.deltaSeconds * state_.braid.animationSpeed;
             weaveTime_ += phaseStep;
@@ -372,6 +402,14 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         const VkRect2D scissor{{0, 0}, extent};
         vkCmdSetViewport(commands, 0, 1, &viewport);
         vkCmdSetScissor(commands, 0, 1, &scissor);
+        const auto& fx = state_.effects;
+        const EffectsBlock effectsBlock{
+            {fx.drift ? fx.driftAmount : 0.0F, fx.driftScale, fx.driftSpeed,
+             fx.drift ? fx.jitter : 0.0F},
+            {fx.shed ? fx.shedShare : 0.0F, fx.shedDistance, fx.shedRate, fx.shedFall},
+            {fx.seeThrough ? 1.0F : 0.0F, 0.0F, 0.0F, 0.0F},
+        };
+        effects_.write(&effectsBlock, sizeof(effectsBlock));
         const auto& braid = state_.braid;
         const auto& tentacle = state_.tentacle;
         // Narrow enough for the tentacles' patches to sit side by side.
@@ -380,6 +418,10 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         const int tentaclePoints =
             tentaclePatchPoints(tentacle.spherePoints, tentacle.radius, tentacle.length,
                                 tentacleWidth, tentacle.roundness);
+        const auto& arched = state_.archedSphere;
+        const ArchLattice archPoints =
+            archLattice(arched.spherePoints, arched.radius, arched.archHeight, arched.tubeRadius,
+                        arched.arches, arched.twist);
         std::array<float, 32> pushConstants{};
         if (braid.geometryMode == 4) {
             const auto& spheres = state_.nestedSpheres;
@@ -561,6 +603,78 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 vortex.ridges.packed()[1],
                 vortex.ridges.packed()[2],
             };
+        } else if (braid.geometryMode == 15) {
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                arched.radius,
+                arched.archHeight,
+                arched.tubeRadius,
+                static_cast<float>(arched.arches),
+                static_cast<float>(arched.spherePoints),
+                static_cast<float>(archPoints.rows) +
+                    static_cast<float>(archPoints.columns) / 128.0F,
+                arched.pointSize,
+                latticeStep(arched.spherePoints),
+                arched.tilt,
+                arched.glow,
+                arched.brightness,
+                arched.twist,
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                15.0F,
+                arched.firstColor[0],
+                arched.firstColor[1],
+                arched.firstColor[2],
+                arched.spin,
+                arched.secondColor[0],
+                arched.secondColor[1],
+                arched.secondColor[2],
+                0.0F,
+                loopCycles_,
+                static_cast<float>(arched.bands),
+                arched.checker ? static_cast<float>(arched.sectors) : 0.0F,
+                0.0F,
+            };
+        } else if (braid.geometryMode == 14) {
+            const auto& sphere = state_.sphereEversion;
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                sphere.radius,
+                sphere.endHold,
+                0.0F,
+                0.0F,
+                static_cast<float>(sphere.pointCount),
+                1.0F,
+                sphere.pointSize,
+                1.0F,
+                sphere.tilt,
+                sphere.glow,
+                sphere.brightness,
+                0.0F,
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                14.0F,
+                sphere.firstColor[0],
+                sphere.firstColor[1],
+                sphere.firstColor[2],
+                sphere.spin,
+                sphere.secondColor[0],
+                sphere.secondColor[1],
+                sphere.secondColor[2],
+                0.0F,
+                loopCycles_,
+                0.0F,
+                0.0F,
+                0.0F,
+            };
         } else if (braid.geometryMode == 12 || braid.geometryMode == 13) {
             // Drawn by the ridged torus shader, with bumps in place of ridges;
             // the chain draws it twice, as two links.
@@ -720,11 +834,17 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         const auto objectCount = static_cast<std::uint32_t>(
             braid.geometryMode == 4    ? state_.nestedSpheres.sphereCount
             : braid.geometryMode == 11 ? tentacle.tentacles + 1
+            : braid.geometryMode == 15 ? arched.arches + 1
             : braid.geometryMode == 8  ? state_.vortex.strands
             : braid.geometryMode == 13 ? 2
-            : (braid.geometryMode >= 5 && braid.geometryMode <= 9) || braid.geometryMode == 12 ? 1
+            : (braid.geometryMode >= 5 && braid.geometryMode <= 9) || braid.geometryMode == 12 ||
+                      braid.geometryMode == 14
+                ? 1
                                       : braid.strands);
-        vkCmdDraw(commands, 720U * 64U * 6U, objectCount, 0, 0);
+        // See-through leaves the depth clear, so nothing hides any point.
+        if (!fx.seeThrough) {
+            vkCmdDraw(commands, 720U * 64U * 6U, objectCount, 0, 0);
+        }
         vkCmdEndRendering(commands);
 
         VkImageMemoryBarrier2 sampleDepth{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
@@ -758,6 +878,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
         vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
                                 &depthSet_, 0, nullptr);
+        const auto drawPoints = [&] {
         if (braid.geometryMode == 4) {
             const auto& spheres = state_.nestedSpheres;
             for (std::uint32_t sphere = 0; sphere < objectCount; ++sphere) {
@@ -788,6 +909,20 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.morph.pointCount), 0, 0);
         } else if (braid.geometryMode == 12) {
             vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.bumpyTorus.pointCount), 0, 0);
+        } else if (braid.geometryMode == 15) {
+            // Sphere first, then the arches; one push constant says which part.
+            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(arched.spherePoints), 0, 0);
+            const float archPart = 1.0F;
+            vkCmdPushConstants(commands, pipelineLayout_,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               27U * sizeof(float), sizeof(float), &archPart);
+            vkCmdDraw(commands, 6,
+                      static_cast<std::uint32_t>(archPoints.rows * archPoints.columns *
+                                                 arched.arches),
+                      0, 0);
+        } else if (braid.geometryMode == 14) {
+            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.sphereEversion.pointCount), 0,
+                      0);
         } else if (braid.geometryMode == 13) {
             const auto linkPoints = static_cast<std::uint32_t>(state_.torusChain.pointCount);
             vkCmdDraw(commands, 6, linkPoints, 0, 0);
@@ -834,6 +969,23 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             vkCmdDraw(commands, 6, pointsPerStrand * static_cast<std::uint32_t>(braid.strands), 0,
                       0);
         }
+        };
+        // Trails: the same points at earlier moments, oldest first, each smaller
+        // and dimmer; the present is drawn last, on top. Every pass starts from
+        // the whole block because the draws above overwrite parts of it.
+        const auto& effects = state_.effects;
+        const int ghosts = effects.trails ? effects.trailCount : 0;
+        for (int ghost = ghosts; ghost >= 0; --ghost) {
+            auto pass = pushConstants;
+            const auto age = static_cast<float>(ghost);
+            pass[2] -= age * effects.trailSpacing;
+            pass[10] *= 1.0F - age / static_cast<float>(ghosts + 1);
+            pass[14] *= std::pow(effects.trailFade, age);
+            vkCmdPushConstants(commands, pipelineLayout_,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               static_cast<std::uint32_t>(sizeof(pass)), pass.data());
+            drawPoints();
+        }
     }
     vkCmdEndRendering(commands);
     if (!state_.preset.graphicsEnabled) {
@@ -867,6 +1019,7 @@ void GraphicsModule::onDetach(AppContext&) {
     depthSet_ = VK_NULL_HANDLE;
     depthPool_.reset();
     depthSetLayout_.reset();
+    effects_.reset();
 }
 
 } // namespace vkexp
