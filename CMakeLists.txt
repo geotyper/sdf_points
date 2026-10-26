@@ -18,9 +18,20 @@ configure_file(config/window.preset
 
 find_package(Vulkan 1.3 REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
-find_package(glm REQUIRED)
-
 include(FetchContent)
+
+# Header-only math; fall back to a pinned download where no system package exists
+# (e.g. Ubuntu without libglm-dev).
+find_package(glm QUIET)
+if(NOT glm_FOUND)
+    FetchContent_Declare(
+        glm
+        GIT_REPOSITORY https://github.com/g-truc/glm.git
+        GIT_TAG 1.0.1
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(glm)
+endif()
 FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
