@@ -35,7 +35,7 @@ struct ComputeOutput {
 };
 
 struct BraidSettings {
-    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere
+    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes
     bool paused{};
     bool autoRotate{false};
     bool limitTubeOverlap{false};
@@ -79,6 +79,24 @@ struct NestedSphereSettings {
     int sphereCount{6};
     int holeCount{12};
     int pointCount{12000};
+    int directionSeed{1};
+};
+
+struct NestedCubeSettings {
+    bool paused{};
+    bool keepApart{true};
+    float animationSpeed{0.38F};
+    float speedVariation{0.65F};
+    float outerSize{0.80F};
+    float sizeRatio{0.56F};
+    float border{0.22F};    // frame width in face units: 1 fills the faces
+    float roundness{0.0F};  // 0 cube .. 1 sphere
+    float pointSize{1.45F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.18F};
+    int cubeCount{4};
+    int pointCount{24000};  // points a solid outer cube would carry
     int directionSeed{1};
 };
 
@@ -343,7 +361,7 @@ struct LoopSettings {
 struct DemoState {
     explicit DemoState(Preset selectedPreset) : preset(std::move(selectedPreset)) {
         braid.geometryMode = preset.initialGeometryMode;
-        palette.enabled = braid.geometryMode == 4;
+        palette.enabled = braid.geometryMode == 4 || braid.geometryMode == 16;
     }
 
     Preset preset;
@@ -351,6 +369,7 @@ struct DemoState {
     ComputeOutput blur;
     BraidSettings braid;
     NestedSphereSettings nestedSpheres;
+    NestedCubeSettings nestedCubes;
     EversionSettings eversion;
     SleeveSettings sleeve;
     MorphSettings morph;
@@ -381,6 +400,9 @@ struct DemoState {
     if (state.braid.geometryMode == 4) {
         inputs.paused = state.nestedSpheres.paused;
         inputs.animationSpeed = state.nestedSpheres.animationSpeed;
+    } else if (state.braid.geometryMode == 16) {
+        inputs.paused = state.nestedCubes.paused;
+        inputs.animationSpeed = state.nestedCubes.animationSpeed;
     } else if (state.braid.geometryMode == 5) {
         inputs.paused = state.eversion.paused;
         inputs.animationSpeed = state.eversion.animationSpeed;

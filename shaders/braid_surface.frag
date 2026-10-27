@@ -7,6 +7,8 @@ layout(location = 0) in vec3 sphereLocalDirection;
 // The closed tubes populate only depth; their colour is never drawn.
 void main() {
     if (nestedSphereMode() && insideSphereHole(normalize(sphereLocalDirection))) discard;
+    // Nested cubes pass the face coordinates instead.
+    if (nestedCubeMode() && insideCubeWindow(sphereLocalDirection.xy)) discard;
     if (tentacleMode() && dot(sphereLocalDirection, sphereLocalDirection) > 0.25) {
         int index;
         float angle, turn;

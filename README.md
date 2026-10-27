@@ -170,6 +170,14 @@ grow out of it, and they can twist around the sphere on their way down. Launch i
 radius and twist, bands, checkerboard sectors, sphere radius and point count, point
 appearance, tilt and the two colors.
 
+**Nested cubes** puts point cubes one inside another, each turning about its own axis
+like the nested spheres. Only a frame around the rim of every face carries points, so
+the inner cubes and the far faces show through the windows; **Border width** runs from
+a thin wireframe to solid faces. **Cube to sphere** rounds every cube into a
+superellipsoid and on into its inscribed sphere. **Keep cubes apart** holds the size
+ratio low enough that no cube ever touches the next, however they turn. Frames keep
+the same point spacing on every cube. Launch it with `--preset nested-cubes`.
+
 **Effects** is a separate window whose settings apply to the points of every geometry.
 **Drift** moves neighbouring points together in a slow flow and **Jitter** makes each
 tremble on its own; both slide points along the surface or away from it. **Shed

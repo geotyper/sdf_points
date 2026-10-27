@@ -5,6 +5,7 @@
 #include "vkexp/demo/ArchLattice.hpp"
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/LoopPlan.hpp"
+#include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/presets/PresetRegistry.hpp"
@@ -71,7 +72,7 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 15, "Built-in preset count");
+    check(registry.all().size() == 16, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
     check(registry.require("nested-spheres").initialGeometryMode == 4,
@@ -611,6 +612,26 @@ void testTentaclePatch() {
     const vkexp::ArchLattice arch = vkexp::archLattice(16000, 0.6, 0.55, 0.09, 6, 0.25);
     check(arch.columns % 2 == 0 && arch.columns >= 6 && arch.rows >= 16,
           "Arch lattice is staggered and populated");
+    check(registry.require("nested-cubes").initialGeometryMode == 16,
+          "Nested cubes initial geometry");
+    check(vkexp::loopDriverLabel(16, vkexp::LoopDriver::Flow) == "Cube turns",
+          "Nested cubes loop label");
+    // A cube's far corner reaches sqrt(3) times its face centre; a sphere is round.
+    check(std::abs(vkexp::nestedCubeRatioLimit(1.0) - 1.0) < 1e-12, "Spheres nest up to touching");
+    check(std::abs(vkexp::nestedCubeRatioLimit(0.0) - std::pow(3.0, 1.0 / 40.0) / std::sqrt(3.0)) <
+              1e-12,
+          "Cubes nest below 1 / sqrt(3)");
+    check(vkexp::nestedCubeRatio(0.9, 0.0, true) < vkexp::nestedCubeRatioLimit(0.0) &&
+              vkexp::nestedCubeRatio(0.9, 0.0, false) == 0.9,
+          "Keeping cubes apart holds the ratio");
+    const vkexp::NestedCubeSettings cubeDefaults;
+    check(cubeDefaults.sizeRatio < 0.97 * vkexp::nestedCubeRatioLimit(cubeDefaults.roundness),
+          "Default cubes stay apart");
+    check(vkexp::nestedCubePoints(24000, 1.0, 1.0) == 24000, "Solid faces take every point");
+    check(vkexp::nestedCubePoints(24000, 0.25, 1.0) == 10512 &&
+              vkexp::nestedCubePoints(24000, 0.25, 0.5) == 2616,
+          "Frames and smaller cubes keep the spacing");
+    check(vkexp::nestedCubePoints(24000, 0.0, 0.1) == 24, "Every strip keeps a point");
     const vkexp::BumpyTorusSettings chain = vkexp::torusChainDefaults();
     check(chain.tubeRadius <= vkexp::torusChainTubeLimit(chain),
           "Chain links fit through each other by default");

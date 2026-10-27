@@ -69,7 +69,11 @@ bool smaleMode() {
 }
 
 bool archMode() {
-    return pc.style.w > 14.5;
+    return pc.style.w > 14.5 && pc.style.w < 15.5;
+}
+
+bool nestedCubeMode() {
+    return pc.style.w > 15.5 && pc.style.w < 16.5;
 }
 
 float hashScalar(float value) {
@@ -164,6 +168,53 @@ vec3 nestedSpherePoint(float longitude, float latitudeParameter, float sphere) {
     vec3 localDirection = localSphereDirection(longitude, latitudeParameter);
     return nestedSphereCenter(sphere)
          + nestedSphereRadius(sphere) * rotateSphereDirection(localDirection, sphere);
+}
+
+// Nested cubes reuse the nested spheres' push constants and rotations: shape =
+// outer half-size, size ratio between neighbours, border width (face units, 1 =
+// solid faces), roundness (0 cube .. 1 sphere). Only a frame around the rim of
+// every face is solid, so the inner cubes show through the windows.
+//
+// Roundness turns the cube into a superellipsoid |x|^n + |y|^n + |z|^n = 1 whose
+// exponent falls from 40 (all but a cube) to 2 (the inscribed sphere).
+float cubeExponent() {
+    return 2.0 / mix(0.05, 1.0, pc.shape.w);
+}
+
+float nestedCubeSize(float cube) {
+    return pc.shape.x * pow(pc.shape.y, cube);
+}
+
+// Half the outer cube's diagonal at the current roundness, with a margin.
+float nestedCubeSpan() {
+    return pc.shape.x * sqrt(3.0) / pow(3.0, 1.0 / cubeExponent()) * 1.10;
+}
+
+// Point (a, b) in [-1, 1]^2 on one of the six faces of the unit cube.
+vec3 cubeFacePoint(int face, vec2 ab) {
+    float side = face % 2 == 0 ? 1.0 : -1.0;
+    int axis = face / 2;
+    if (axis == 0) return vec3(side, ab.x * side, ab.y);
+    if (axis == 1) return vec3(ab.y, side, ab.x * side);
+    return vec3(ab.x * side, ab.y, side);
+}
+
+// Pushes a point of the cube along its ray onto the rounded body.
+vec3 roundedCubePoint(vec3 cubePoint) {
+    float n = cubeExponent();
+    vec3 a = abs(cubePoint) / max(abs(cubePoint.x), max(abs(cubePoint.y), abs(cubePoint.z)));
+    float norm = pow(pow(a.x, n) + pow(a.y, n) + pow(a.z, n), 1.0 / n);
+    return cubePoint / (max(abs(cubePoint.x), max(abs(cubePoint.y), abs(cubePoint.z))) * norm);
+}
+
+vec3 roundedCubeNormal(vec3 p) {
+    vec3 a = abs(p) / max(abs(p.x), max(abs(p.y), abs(p.z)));
+    return normalize(sign(p) * pow(a, vec3(cubeExponent() - 1.0)));
+}
+
+// Inside a face's window, away from its frame.
+bool insideCubeWindow(vec2 ab) {
+    return max(abs(ab.x), abs(ab.y)) < 1.0 - pc.shape.z;
 }
 
 // Punctured sphere eversion reuses the push constants: shape = radius, hole
@@ -1123,6 +1174,9 @@ vec4 projectView(vec3 p) {
     }
     if (archMode()) {
         span = archSpan();
+    }
+    if (nestedCubeMode()) {
+        span = nestedCubeSpan();
     }
     vec2 scale = min(pc.view.x, pc.view.y) / pc.view.xy;
     return vec4(p.xy * vec2(1.0, -1.0) * scale / span, (4.0 - p.z) / 8.0, 1.0);

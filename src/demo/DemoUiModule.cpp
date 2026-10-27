@@ -1,6 +1,7 @@
 #include "vkexp/demo/DemoUiModule.hpp"
 
 #include "vkexp/demo/DemoState.hpp"
+#include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/profiling/Profiler.hpp"
 #include "vkexp/ui/ImGuiModule.hpp"
@@ -80,7 +81,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                        "Sleeve",        "Morphing sleeve", "Vortex ring",
                                        "Ridged torus",  "Ridged braid",    "Tentacle sphere",
                                        "Bumpy torus",   "Torus chain",     "Sphere eversion",
-                                       "Arched sphere"};
+                                       "Arched sphere", "Nested cubes"};
     const auto geometryCount = static_cast<int>(geometryNames.size());
     braid.geometryMode = std::clamp(braid.geometryMode, 0, geometryCount - 1);
     if (ImGui::BeginCombo("Geometry",
@@ -95,11 +96,64 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             }
         };
         group("Braids", {0, 1, 2, 3, 10});
-        group("Spheres", {4, 11, 15});
+        group("Spheres", {4, 16, 11, 15});
         group("Eversion", {5, 14, 6, 7, 8, 9, 12, 13});
         ImGui::EndCombo();
     }
-    if (braid.geometryMode == 15) {
+    if (braid.geometryMode == 16) {
+        auto& cubes = state_.nestedCubes;
+        ImGui::Checkbox("Pause", &cubes.paused);
+        ImGui::SliderFloat("Rotation speed", &cubes.animationSpeed, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Speed variation", &cubes.speedVariation, 0.0F, 1.0F, "%.2f");
+        ImGui::SliderInt("Cubes", &cubes.cubeCount, 1, 8);
+        ImGui::SliderFloat("Outer size", &cubes.outerSize, 0.40F, 1.10F, "%.2f");
+        ImGui::SliderFloat("Size ratio", &cubes.sizeRatio, 0.25F, 0.95F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Size of each cube relative to the one around it.");
+        }
+        ImGui::Checkbox("Keep cubes apart", &cubes.keepApart);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Hold the ratio low enough that no cube ever touches the next.");
+        }
+        const double ratioLimit = nestedCubeRatioLimit(cubes.roundness);
+        if (cubes.keepApart && cubes.sizeRatio > 0.97 * ratioLimit) {
+            ImGui::TextDisabled("Ratio held at %.2f", 0.97 * ratioLimit);
+        }
+        ImGui::SliderFloat("Border width", &cubes.border, 0.02F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Width of the frame around every face; 1 fills the faces.");
+        }
+        ImGui::SliderFloat("Cube to sphere", &cubes.roundness, 0.0F, 1.0F, "%.2f");
+        ImGui::SliderInt("Solid cube points", &cubes.pointCount, 4000, 80000);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Points a solid outer cube would carry; frames keep the spacing.");
+        }
+        ImGui::SliderFloat("Point radius (700px)", &cubes.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &cubes.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &cubes.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &cubes.tilt, -35.0F, 35.0F);
+        if (ImGui::Button("Randomize directions")) {
+            cubes.directionSeed = cubes.directionSeed % 997 + 1;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset cubes")) {
+            cubes = NestedCubeSettings{};
+        }
+        ImGui::SeparatorText("Cube palette");
+        for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::Text("Color %d", static_cast<int>(i + 1));
+            ImGui::SameLine();
+            ImGui::ColorEdit3("##Cube color", state_.palette.colors[i].data());
+            ImGui::PopID();
+        }
+        if (ImGui::Button("Reset palette")) {
+            state_.palette.colors = StrandPalette{}.colors;
+        }
+        if (cubes.cubeCount > static_cast<int>(state_.palette.colors.size())) {
+            ImGui::TextDisabled("The palette repeats after color 5.");
+        }
+    } else if (braid.geometryMode == 15) {
         auto& arched = state_.archedSphere;
         ImGui::Checkbox("Pause", &arched.paused);
         ImGui::SliderFloat("Flow speed", &arched.animationSpeed, 0.0F, 2.0F, "%.2f");

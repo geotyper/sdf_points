@@ -91,6 +91,51 @@ void main() {
         return;
     }
 
+    if (nestedCubeMode()) {
+        // Each face's frame is four equal strips laid as a pinwheel; every
+        // strip gets a grid of points with the same spacing both ways.
+        int cube = int(pc.motion.y + 0.5);
+        int perStrip = max(int(pc.motion.z + 0.5) / 24, 1);
+        int strip = gl_InstanceIndex / perStrip;
+        int sampleIndex = gl_InstanceIndex % perStrip;
+        float border = pc.shape.z;
+        float stripLength = 2.0 - border;
+        int rows = max(int(round(sqrt(float(perStrip) * border / stripLength))), 1);
+        int columns = max(perStrip / rows, 1);
+        int row = sampleIndex / columns, column = sampleIndex % columns;
+        if (strip >= 24 || row >= rows) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            pointColor = vec3(0.0);
+            pointFacing = 0.0;
+            return;
+        }
+        vec2 ab = vec2(-1.0 + stripLength * (float(column) + 0.5) / float(columns),
+                       1.0 - border * (float(row) + 0.5) / float(rows));
+        for (int turn = 0; turn < strip % 4; ++turn) {
+            ab = vec2(-ab.y, ab.x);
+        }
+        vec3 local = roundedCubePoint(cubeFacePoint(strip / 4, ab));
+        vec3 position = nestedCubeSize(float(cube)) * rotateSphereDirection(local, float(cube));
+        vec3 normal = toView(rotateSphereDirection(roundedCubeNormal(local), float(cube)));
+        vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
+        // Both sides light up: the far faces are seen from inside, through the windows.
+        float diffuse = abs(dot(normal, light));
+        float illumination = 0.10 + 0.90 * pow(diffuse, 0.8);
+        float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
+                           * mix(0.36, 1.0, illumination);
+        radiusPixels = max(radiusPixels, 0.30);
+        vec3 tint = pc.style.x >= 0.0 ? pc.style.rgb : vec3(0.55, 0.72, 1.0);
+        pointColor = tint * illumination * pc.look.z;
+        // The depth skin alone decides what is hidden.
+        pointFacing = 1.0;
+
+        vec4 clip = effectClip(position, normal, radiusPixels);
+        clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
+        gl_Position = clip;
+        disc *= (radiusPixels + 0.65) / radiusPixels;
+        return;
+    }
+
     if (archMode()) {
         vec3 position, normal;
         float pattern;

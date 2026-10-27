@@ -3,6 +3,7 @@
 #include "vkexp/core/VulkanContext.hpp"
 #include "vkexp/demo/ArchLattice.hpp"
 #include "vkexp/demo/DemoState.hpp"
+#include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/profiling/Profiler.hpp"
@@ -236,7 +237,7 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
     if (recording) {
         // Exact steps: after the recorded frames the scene is back at its start.
         loopCycles_ = static_cast<float>(recording->phaseCycles);
-        if (state_.braid.geometryMode == 4) {
+        if (state_.braid.geometryMode == 4 || state_.braid.geometryMode == 16) {
             nestedSphereTime_ += static_cast<float>(recording->phaseStep);
         } else if ((state_.braid.geometryMode >= 5 && state_.braid.geometryMode <= 9) ||
                    state_.braid.geometryMode >= 11) {
@@ -254,6 +255,10 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         if (state_.braid.geometryMode == 4) {
             if (!state_.nestedSpheres.paused) {
                 nestedSphereTime_ += frame.deltaSeconds * state_.nestedSpheres.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 16) {
+            if (!state_.nestedCubes.paused) {
+                nestedSphereTime_ += frame.deltaSeconds * state_.nestedCubes.animationSpeed;
             }
         } else if (state_.braid.geometryMode == 5) {
             if (!state_.eversion.paused) {
@@ -422,8 +427,46 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         const ArchLattice archPoints =
             archLattice(arched.spherePoints, arched.radius, arched.archHeight, arched.tubeRadius,
                         arched.arches, arched.twist);
+        const auto& cubes = state_.nestedCubes;
+        const auto cubeRatio = static_cast<float>(
+            nestedCubeRatio(cubes.sizeRatio, cubes.roundness, cubes.keepApart));
         std::array<float, 32> pushConstants{};
-        if (braid.geometryMode == 4) {
+        if (braid.geometryMode == 16) {
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                nestedSphereTime_,
+                0.0F,
+                cubes.outerSize,
+                cubeRatio,
+                cubes.border,
+                cubes.roundness,
+                static_cast<float>(cubes.pointCount),
+                1.0F,
+                cubes.pointSize,
+                static_cast<float>(cubes.cubeCount),
+                cubes.tilt,
+                cubes.glow,
+                cubes.brightness,
+                0.0F,
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                16.0F,
+                cubes.speedVariation,
+                0.0F,
+                0.0F,
+                0.0F,
+                static_cast<float>(cubes.directionSeed),
+                0.0F,
+                0.0F,
+                0.0F,
+                loopCycles_,
+                0.0F,
+                0.0F,
+                0.0F,
+            };
+        } else if (braid.geometryMode == 4) {
             const auto& spheres = state_.nestedSpheres;
             pushConstants = {
                 static_cast<float>(extent.width),
@@ -833,6 +876,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, surfacePipeline_);
         const auto objectCount = static_cast<std::uint32_t>(
             braid.geometryMode == 4    ? state_.nestedSpheres.sphereCount
+            : braid.geometryMode == 16 ? cubes.cubeCount
             : braid.geometryMode == 11 ? tentacle.tentacles + 1
             : braid.geometryMode == 15 ? arched.arches + 1
             : braid.geometryMode == 8  ? state_.vortex.strands
@@ -900,6 +944,24 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                     VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 25U * sizeof(float),
                     static_cast<std::uint32_t>(sizeof(sphereDraw)), sphereDraw.data());
                 vkCmdDraw(commands, 6, spherePointCount, 0, 0);
+            }
+        } else if (braid.geometryMode == 16) {
+            // One draw per cube, like the spheres: its index, count and palette tint.
+            for (std::uint32_t cube = 0; cube < objectCount; ++cube) {
+                const auto cubePointCount = static_cast<std::uint32_t>(nestedCubePoints(
+                    cubes.pointCount, cubes.border,
+                    std::pow(static_cast<double>(cubeRatio), static_cast<double>(cube))));
+                const auto& tint = state_.palette.colors[cube % state_.palette.colors.size()];
+                vkCmdPushConstants(commands, pipelineLayout_,
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   16U * sizeof(float), 3U * sizeof(float), tint.data());
+                const std::array cubeDraw{static_cast<float>(cube),
+                                          static_cast<float>(cubePointCount)};
+                vkCmdPushConstants(
+                    commands, pipelineLayout_,
+                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 25U * sizeof(float),
+                    static_cast<std::uint32_t>(sizeof(cubeDraw)), cubeDraw.data());
+                vkCmdDraw(commands, 6, cubePointCount, 0, 0);
             }
         } else if (braid.geometryMode == 5) {
             vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.eversion.pointCount), 0, 0);

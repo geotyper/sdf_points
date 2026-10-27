@@ -17,6 +17,24 @@ void main() {
     } else {
         sphereLocalDirection = vec3(0.0, 0.0, 1.0);
     }
+    if (nestedCubeMode()) {
+        // Every instance is one cube: a square grid on each of its six faces.
+        // The fragment shader cuts the windows out; spare cells collapse.
+        const int side = 87;
+        int face = cell / (side * side);
+        if (face >= 6) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            return;
+        }
+        int faceCell = cell % (side * side);
+        vec2 ab = vec2(ivec2(faceCell / side, faceCell % side) + corners[gl_VertexIndex % 6])
+                * (2.0 / float(side)) - 1.0;
+        sphereLocalDirection = vec3(ab, 0.0);
+        float cube = float(gl_InstanceIndex);
+        gl_Position = projectPoint(nestedCubeSize(cube) * rotateSphereDirection(
+            roundedCubePoint(cubeFacePoint(face, ab)), cube));
+        return;
+    }
     if (tentacleMode()) {
         if (gl_InstanceIndex == 0) {
             // The body: a squarer grid over the whole sphere. Its cells are too
