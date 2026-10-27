@@ -260,6 +260,10 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             if (!state_.nestedCubes.paused) {
                 nestedSphereTime_ += frame.deltaSeconds * state_.nestedCubes.animationSpeed;
             }
+        } else if (state_.braid.geometryMode == 18) {
+            if (!state_.tesseract.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.tesseract.animationSpeed;
+            }
         } else if (state_.braid.geometryMode == 17) {
             if (!state_.hopf.paused) {
                 eversionTime_ += frame.deltaSeconds * state_.hopf.animationSpeed;
@@ -467,6 +471,42 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 0.0F,
                 loopCycles_,
                 cubes.perspective ? cubes.cameraDistance : 0.0F,
+                cubes.sync && !cubes.zoom ? 1.0F + cubes.syncHold : 0.0F,
+                cubes.syncFlash,
+            };
+        } else if (braid.geometryMode == 18) {
+            const auto& tesseract = state_.tesseract;
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                tesseract.size,
+                tesseract.tubeRadius,
+                tesseract.cameraDistance,
+                tesseract.turnXW,
+                static_cast<float>(tesseract.pointsAlong),
+                static_cast<float>(tesseract.pointsAround),
+                tesseract.pointSize,
+                32.0F,
+                tesseract.tilt,
+                tesseract.glow,
+                tesseract.brightness,
+                tesseract.turnYZ,
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                18.0F,
+                tesseract.nearColor[0],
+                tesseract.nearColor[1],
+                tesseract.nearColor[2],
+                tesseract.spin,
+                tesseract.farColor[0],
+                tesseract.farColor[1],
+                tesseract.farColor[2],
+                tesseract.lightFlow,
+                loopCycles_,
+                tesseract.lightStrength,
                 0.0F,
                 0.0F,
             };
@@ -918,6 +958,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             braid.geometryMode == 4    ? state_.nestedSpheres.sphereCount
             : braid.geometryMode == 16 ? cubes.cubeCount + (cubes.zoom ? 1 : 0)
             : braid.geometryMode == 17 ? state_.hopf.tori * state_.hopf.fibers
+            : braid.geometryMode == 18 ? 32
             : braid.geometryMode == 11 ? tentacle.tentacles + 1
             : braid.geometryMode == 15 ? arched.arches + 1
             : braid.geometryMode == 8  ? state_.vortex.strands
@@ -928,8 +969,11 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                                       : braid.strands);
         // See-through leaves the depth clear, so nothing hides any point.
         if (!fx.seeThrough) {
-            // A Hopf fibre's skin needs far fewer cells than the default grid.
-            vkCmdDraw(commands, braid.geometryMode == 17 ? 240U * 24U * 6U : 720U * 64U * 6U,
+            // A tube of the Hopf fibration or the tesseract needs far fewer
+            // cells than the default grid.
+            vkCmdDraw(commands,
+                      braid.geometryMode == 17 || braid.geometryMode == 18 ? 240U * 24U * 6U
+                                                                           : 720U * 64U * 6U,
                       objectCount, 0, 0);
         }
         vkCmdEndRendering(commands);
@@ -1022,6 +1066,12 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                     static_cast<std::uint32_t>(sizeof(cubeDraw)), cubeDraw.data());
                 vkCmdDraw(commands, 6, cubePointCount, 0, 0);
             }
+        } else if (braid.geometryMode == 18) {
+            const auto& tesseract = state_.tesseract;
+            vkCmdDraw(commands, 6,
+                      static_cast<std::uint32_t>(32 * tesseract.pointsAlong *
+                                                 tesseract.pointsAround),
+                      0, 0);
         } else if (braid.geometryMode == 17) {
             // One draw per torus with its palette colour; the shader reads which.
             const auto& hopf = state_.hopf;

@@ -72,7 +72,7 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 17, "Built-in preset count");
+    check(registry.all().size() == 18, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
     check(registry.require("nested-spheres").initialGeometryMode == 4,
@@ -643,6 +643,9 @@ void testTentaclePatch() {
           "Hopf fibration initial geometry");
     check(vkexp::loopDriverLabel(17, vkexp::LoopDriver::Flow) == "Fibre flows",
           "Hopf loop label");
+    check(registry.require("tesseract").initialGeometryMode == 18, "Tesseract initial geometry");
+    check(vkexp::loopDriverLabel(18, vkexp::LoopDriver::Flow) == "Tesseract turns",
+          "Tesseract loop label");
     const vkexp::BumpyTorusSettings chain = vkexp::torusChainDefaults();
     check(chain.tubeRadius <= vkexp::torusChainTubeLimit(chain),
           "Chain links fit through each other by default");

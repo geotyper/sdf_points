@@ -186,6 +186,12 @@ spins about an axis that wanders with depth and is twisted against its neighbour
 **Twist per level**. **Perspective** puts the camera at **Camera distance** outer
 sizes, so the cubes swell as they pass it.
 
+With the zoom off, **Turn in sync** gives the nest a story: every cube turns a whole
+number of times per cycle about its own axis, so once a cycle they all line up at the
+same moment and the windows open straight through. **Hold aligned** slows the turn
+around that moment so the cubes drift together, stand aligned and burst apart, and
+**Alignment flash** lights them up as they meet.
+
 **Hopf fibration** draws the circles of the Hopf fibration seen through stereographic
 projection: every circle is linked with every other, and the circles over one latitude
 fill a torus, so the tori nest. Lights run along every circle, the circles drift from
@@ -194,6 +200,15 @@ other. Launch it with `--preset hopf-fibration`. Controls cover light flow, drif
 spin, 4D tumble and its rate, breathing, the number of tori and circles, their
 latitudes, scale, tube radius, point counts, point appearance and tilt; the tori take
 the palette colours.
+
+**Tesseract** is the 4D cube: its 32 edges, as tubes of points, turned in four
+dimensions and seen in perspective from a 4D camera, so its far cell sits inside its
+near one and the turn through the fourth dimension carries the inner cube out while
+the outer one folds in. The tubes swell with the 4D perspective and take the near or
+the far colour by their 4D depth, and lights run along the edges. Launch it with
+`--preset tesseract`. Controls cover the turn through the fourth dimension and an
+ordinary second turn, spin, the 4D camera distance, size, tube radius, light flow and
+strength, point counts and appearance, tilt and the two colours.
 
 **Effects** is a separate window whose settings apply to the points of every geometry.
 **Drift** moves neighbouring points together in a slow flow and **Jitter** makes each

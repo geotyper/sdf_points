@@ -50,6 +50,23 @@ void main() {
         gl_Position = projectPoint(position);
         return;
     }
+    if (tesseractMode()) {
+        // One instance per edge: 240 rows along it, 24 around its tube.
+        const ivec2 grid = ivec2(240, 24);
+        if (cell >= grid.x * grid.y) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            return;
+        }
+        ivec2 corner = ivec2(cell / grid.y, cell % grid.y) + corners[gl_VertexIndex % 6];
+        vec3 outward;
+        float w;
+        vec3 position = tesseractTubePoint(gl_InstanceIndex, float(corner.x) / float(grid.x),
+                                           TAU * float(corner.y) / float(grid.y), outward, w);
+        // A hair inside the points, so they sit on the skin and not under it.
+        float thickness = pc.shape.y * tesseractScale(w);
+        gl_Position = projectPoint(position - 0.03 * thickness * outward);
+        return;
+    }
     if (hopfMode()) {
         // One instance per fibre: 240 rows along it, 24 around its tube.
         const ivec2 grid = ivec2(240, 24);

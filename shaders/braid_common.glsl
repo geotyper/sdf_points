@@ -80,6 +80,10 @@ bool hopfMode() {
     return pc.style.w > 16.5 && pc.style.w < 17.5;
 }
 
+bool tesseractMode() {
+    return pc.style.w > 17.5 && pc.style.w < 18.5;
+}
+
 float hashScalar(float value) {
     return fract(sin(value * 127.1) * 43758.5453123);
 }
@@ -179,7 +183,8 @@ vec3 nestedSpherePoint(float longitude, float latitudeParameter, float sphere) {
 // solid faces), roundness (0 cube .. 1 sphere). Only a frame around the rim of
 // every face is solid, so the inner cubes show through the windows.
 // wave.yzw: infinite zoom on, zoom levels per flow cycle, twist per level;
-// loop.y: camera distance in outer sizes (0 = orthographic).
+// loop.y: camera distance in outer sizes (0 = orthographic); loop.z: 0, or
+// 1 + hold for cubes turning in sync; loop.w: flash when they line up.
 //
 // Roundness turns the cube into a superellipsoid |x|^n + |y|^n + |z|^n = 1 whose
 // exponent falls from 40 (all but a cube) to 2 (the inscribed sphere).
@@ -210,7 +215,33 @@ float cubeFade(float depth) {
 
 // While zooming the turn belongs to the depth, not to the cube: each cube spins
 // about an axis that wanders with depth and is twisted against its neighbours.
+bool cubeSync() {
+    return !cubeZoom() && pc.loop.z > 0.5;
+}
+
+// In sync every cube turns a whole number of times per flow cycle, so at the
+// cycle's end they all line up at once. The hold slows the turn around that
+// moment: the cubes drift together, stand aligned, and burst apart.
+float cubeSyncAngle() {
+    float phase = timePhase(1.0);
+    return phase - (pc.loop.z - 1.0) * sin(phase);
+}
+
+// 1 while the cubes stand aligned, falling to 0 away from it.
+float cubeAlignment() {
+    return cubeSync() ? pow(0.5 + 0.5 * cos(timePhase(1.0)), 12.0) : 0.0;
+}
+
 vec3 turnCube(vec3 direction, float depth) {
+    if (cubeSync()) {
+        float identity = depth + pc.motion.x * 17.0;
+        vec3 axis = vec3(hashScalar(identity + 1.3), hashScalar(identity + 7.1),
+                         hashScalar(identity + 13.7)) * 2.0 - 1.0;
+        axis = normalize(axis + vec3(0.001, 0.002, 0.003));
+        float turns = 1.0 + floor(3.0 * hashScalar(identity + 23.9));
+        float sense = hashScalar(identity + 31.7) < 0.5 ? -1.0 : 1.0;
+        return rotateAroundAxis(direction, axis, sense * turns * cubeSyncAngle());
+    }
     if (!cubeZoom()) return rotateSphereDirection(direction, depth);
     float place = depth + 3.1 * pc.motion.x;
     vec3 axis = normalize(vec3(sin(1.7 * place + 0.3), 0.8, cos(1.1 * place + 1.0)));
@@ -308,6 +339,73 @@ void hopfFrame(float t, float torus, float fiber, out vec3 center, out vec3 norm
     }
     normal = normalize(bend);
     binormal = cross(tangent, normal);
+}
+
+// Tesseract: the 32 edges of the 4D cube [-1, 1]^4 turned in 4D and seen in
+// perspective from a 4D camera, so its far cell shows inside its near one and
+// the turn carries one through the other. shape = size, tube radius, 4D camera
+// distance, XW turn rate; points = samples along an edge, around its tube,
+// pixel radius; look.w = YZ turn rate; wave = near colour + spin rate;
+// motion = far colour + light flow rate; loop.y = light strength.
+vec4 tesseractVertex(int edge, float along) {
+    int axis = edge / 8;
+    int combo = edge % 8;
+    vec4 vertex;
+    int bit = 0;
+    for (int coordinate = 0; coordinate < 4; ++coordinate) {
+        if (coordinate == axis) {
+            vertex[coordinate] = 2.0 * along - 1.0;
+        } else {
+            vertex[coordinate] = ((combo >> bit) & 1) == 1 ? 1.0 : -1.0;
+            ++bit;
+        }
+    }
+    return vertex;
+}
+
+vec4 turnTesseract(vec4 q) {
+    float a = timePhase(pc.shape.w), b = timePhase(pc.look.w);
+    q = vec4(cos(a) * q.x - sin(a) * q.w, q.y, q.z, sin(a) * q.x + cos(a) * q.w);
+    q = vec4(q.x, cos(b) * q.y - sin(b) * q.z, sin(b) * q.y + cos(b) * q.z, q.w);
+    return q;
+}
+
+// Perspective magnification of a 4D point: near cells grow, far ones shrink.
+float tesseractScale(float w) {
+    return pc.shape.z / (pc.shape.z - w);
+}
+
+vec3 tesseractProject(vec4 q) {
+    vec3 p = pc.shape.x * tesseractScale(q.w) * q.xyz;
+    float spin = timePhase(pc.wave.w);
+    p.xz = mat2(cos(spin), sin(spin), -sin(spin), cos(spin)) * p.xz;
+    return p;
+}
+
+// Furthest any vertex can project (|q| = 2), whatever the turn.
+float tesseractSpan() {
+    float reach = 0.0;
+    for (int i = 0; i <= 32; ++i) {
+        float angle = 0.5 * PI * float(i) / 32.0;
+        reach = max(reach, 2.0 * cos(angle) * tesseractScale(2.0 * sin(angle)));
+    }
+    return pc.shape.x * reach * 1.08;
+}
+
+// Point on the tube around one edge; the tube swells with the 4D perspective.
+// `w` returns the turned 4D depth for the colour.
+vec3 tesseractTubePoint(int edge, float along, float around, out vec3 outward, out float w) {
+    vec4 start = turnTesseract(tesseractVertex(edge, 0.0));
+    vec4 end = turnTesseract(tesseractVertex(edge, 1.0));
+    vec4 q = mix(start, end, along);
+    w = q.w;
+    vec3 a = tesseractProject(start), b = tesseractProject(end);
+    vec3 direction = normalize(b - a + vec3(1e-6, 0.0, 0.0));
+    vec3 side = cross(direction, abs(direction.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0));
+    side = normalize(side);
+    vec3 up = cross(direction, side);
+    outward = side * cos(around) + up * sin(around);
+    return tesseractProject(q) + pc.shape.y * tesseractScale(q.w) * outward;
 }
 
 // Inside a face's window, away from its frame.
@@ -1278,6 +1376,9 @@ vec4 projectView(vec3 p) {
     }
     if (hopfMode()) {
         span = hopfSpan();
+    }
+    if (tesseractMode()) {
+        span = tesseractSpan();
     }
     vec2 scale = min(pc.view.x, pc.view.y) / pc.view.xy;
     vec4 clip = vec4(p.xy * vec2(1.0, -1.0) * scale / span, (4.0 - p.z) / 8.0, 1.0);

@@ -81,7 +81,8 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                        "Sleeve",        "Morphing sleeve", "Vortex ring",
                                        "Ridged torus",  "Ridged braid",    "Tentacle sphere",
                                        "Bumpy torus",   "Torus chain",     "Sphere eversion",
-                                       "Arched sphere", "Nested cubes",    "Hopf fibration"};
+                                       "Arched sphere", "Nested cubes",    "Hopf fibration",
+                                       "Tesseract"};
     const auto geometryCount = static_cast<int>(geometryNames.size());
     braid.geometryMode = std::clamp(braid.geometryMode, 0, geometryCount - 1);
     if (ImGui::BeginCombo("Geometry",
@@ -96,7 +97,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             }
         };
         group("Braids", {0, 1, 2, 3, 10});
-        group("Spheres", {4, 16, 11, 15, 17});
+        group("Spheres", {4, 16, 11, 15, 17, 18});
         group("Eversion", {5, 14, 6, 7, 8, 9, 12, 13});
         ImGui::EndCombo();
     }
@@ -115,7 +116,17 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             }
             ImGui::SliderAngle("Twist per level", &cubes.zoomTwist, -90.0F, 90.0F);
         } else {
-            ImGui::SliderFloat("Speed variation", &cubes.speedVariation, 0.0F, 1.0F, "%.2f");
+            ImGui::Checkbox("Turn in sync", &cubes.sync);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Whole turns per cycle: once a cycle every cube lines up at the same moment.");
+            }
+            if (cubes.sync) {
+                ImGui::SliderFloat("Hold aligned", &cubes.syncHold, 0.0F, 0.95F, "%.2f");
+                ImGui::SliderFloat("Alignment flash", &cubes.syncFlash, 0.0F, 2.0F, "%.2f");
+            } else {
+                ImGui::SliderFloat("Speed variation", &cubes.speedVariation, 0.0F, 1.0F, "%.2f");
+            }
         }
         ImGui::Checkbox("Perspective", &cubes.perspective);
         ImGui::BeginDisabled(!cubes.perspective);
@@ -168,6 +179,35 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         }
         if (cubes.cubeCount > static_cast<int>(state_.palette.colors.size())) {
             ImGui::TextDisabled("The palette repeats after color 5.");
+        }
+    } else if (braid.geometryMode == 18) {
+        auto& tesseract = state_.tesseract;
+        ImGui::Checkbox("Pause", &tesseract.paused);
+        ImGui::SliderFloat("Speed", &tesseract.animationSpeed, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("4D turn (XW)", &tesseract.turnXW, -3.0F, 3.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Turn through the fourth dimension: the inner cube comes out.");
+        }
+        ImGui::SliderFloat("Second turn (YZ)", &tesseract.turnYZ, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Spin", &tesseract.spin, -2.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("4D camera distance", &tesseract.cameraDistance, 2.5F, 8.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Closer makes the inner cube smaller against the outer one.");
+        }
+        ImGui::SliderFloat("Size", &tesseract.size, 0.15F, 0.80F, "%.2f");
+        ImGui::SliderFloat("Tube radius", &tesseract.tubeRadius, 0.005F, 0.08F, "%.3f");
+        ImGui::SliderFloat("Light flow", &tesseract.lightFlow, -6.0F, 6.0F, "%.1f");
+        ImGui::SliderFloat("Light strength", &tesseract.lightStrength, 0.0F, 2.0F, "%.2f");
+        ImGui::SliderInt("Points along", &tesseract.pointsAlong, 40, 400);
+        ImGui::SliderInt("Points around", &tesseract.pointsAround, 3, 20);
+        ImGui::SliderFloat("Point radius (700px)", &tesseract.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &tesseract.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &tesseract.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &tesseract.tilt, -90.0F, 90.0F);
+        ImGui::ColorEdit3("Near color", tesseract.nearColor.data());
+        ImGui::ColorEdit3("Far color", tesseract.farColor.data());
+        if (ImGui::Button("Reset tesseract")) {
+            tesseract = TesseractSettings{};
         }
     } else if (braid.geometryMode == 17) {
         auto& hopf = state_.hopf;

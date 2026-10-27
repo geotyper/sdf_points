@@ -143,12 +143,47 @@ void main() {
         }
         radiusPixels = max(radiusPixels, 0.30);
         vec3 tint = pc.style.x >= 0.0 ? pc.style.rgb : vec3(0.55, 0.72, 1.0);
-        pointColor = tint * illumination * pc.look.z * fade;
+        // A flash as the synchronised cubes line up.
+        float aligned = cubeAlignment();
+        pointColor = (tint * (1.0 + pc.loop.w * aligned) + 0.3 * pc.loop.w * aligned)
+                   * illumination * pc.look.z * fade;
         // The depth skin alone decides what is hidden.
         pointFacing = 1.0;
 
         vec4 clip = effectClip(position, normal, radiusPixels);
         clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy * clip.w;
+        gl_Position = clip;
+        disc *= (radiusPixels + 0.65) / radiusPixels;
+        return;
+    }
+
+    if (tesseractMode()) {
+        int along = max(int(pc.points.x + 0.5), 1), around = max(int(pc.points.y + 0.5), 1);
+        int edge = gl_InstanceIndex / (along * around);
+        int sampleIndex = gl_InstanceIndex % (along * around);
+        int row = sampleIndex / around, column = sampleIndex % around;
+        float s = (float(row) + 0.5) / float(along);
+        float v = TAU * (float(column) + 0.5 * float(row % 2)) / float(around);
+        vec3 outward;
+        float w;
+        vec3 position = tesseractTubePoint(edge, s, v, outward, w);
+        vec3 viewNormal = toView(outward);
+        vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
+        float diffuse = max(dot(viewNormal, light), 0.0);
+        float illumination = 0.10 + 0.90 * pow(diffuse, 0.8);
+        float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
+                           * mix(0.36, 1.0, illumination) * sqrt(tesseractScale(w));
+        radiusPixels = max(radiusPixels, 0.30);
+        // Near cell in one colour, far cell in the other; lights run along the
+        // edges in the direction of their axis.
+        vec3 tint = mix(pc.motion.rgb, pc.wave.rgb, smoothstep(-1.6, 1.6, w));
+        float pulse = pow(0.5 + 0.5 * cos(TAU * s - timePhase(pc.motion.w)), 10.0);
+        tint = tint * (1.0 + pc.loop.y * pulse) + 0.3 * pc.loop.y * pulse;
+        pointColor = tint * illumination * pc.look.z;
+        pointFacing = smoothstep(-0.015, 0.025, viewNormal.z);
+
+        vec4 clip = effectClip(position, viewNormal, radiusPixels);
+        clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
         gl_Position = clip;
         disc *= (radiusPixels + 0.65) / radiusPixels;
         return;

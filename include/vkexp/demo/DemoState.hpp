@@ -35,7 +35,7 @@ struct ComputeOutput {
 };
 
 struct BraidSettings {
-    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes, 17: Hopf fibration
+    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes, 17: Hopf fibration, 18: tesseract
     bool paused{};
     bool autoRotate{false};
     bool limitTubeOverlap{false};
@@ -91,6 +91,11 @@ struct NestedCubeSettings {
     float zoomTwist{0.35F}; // turn between neighbouring levels, radians
     bool perspective{true};
     float cameraDistance{2.2F}; // in outer sizes
+    // Without the zoom: every cube turns a whole number of times per cycle, so
+    // they all line up at once, stand for a moment and burst apart.
+    bool sync{false};
+    float syncHold{0.6F};  // 0 .. 0.95: how long they linger aligned
+    float syncFlash{0.8F}; // glow as they line up
     float animationSpeed{0.38F};
     float speedVariation{0.65F};
     float outerSize{0.80F};
@@ -127,6 +132,27 @@ struct HopfSettings {
     int fibers{14};
     int pointsAlong{240};
     int pointsAround{8};
+};
+
+struct TesseractSettings {
+    bool paused{};
+    float animationSpeed{0.30F};
+    float turnXW{1.0F};  // turns through the fourth dimension per flow cycle
+    float turnYZ{0.0F};  // ordinary turn added to it
+    float spin{0.25F};
+    float size{0.42F};
+    float tubeRadius{0.030F};
+    float cameraDistance{3.0F}; // 4D camera, in half-edges
+    float lightFlow{2.0F};
+    float lightStrength{0.6F};
+    float pointSize{1.30F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.35F};
+    int pointsAlong{160};
+    int pointsAround{10};
+    std::array<float, 3> nearColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> farColor{0.14F, 0.58F, 1.00F};
 };
 
 struct EversionSettings {
@@ -401,6 +427,7 @@ struct DemoState {
     NestedSphereSettings nestedSpheres;
     NestedCubeSettings nestedCubes;
     HopfSettings hopf;
+    TesseractSettings tesseract;
     EversionSettings eversion;
     SleeveSettings sleeve;
     MorphSettings morph;
@@ -434,6 +461,9 @@ struct DemoState {
     } else if (state.braid.geometryMode == 16) {
         inputs.paused = state.nestedCubes.paused;
         inputs.animationSpeed = state.nestedCubes.animationSpeed;
+    } else if (state.braid.geometryMode == 18) {
+        inputs.paused = state.tesseract.paused;
+        inputs.animationSpeed = state.tesseract.animationSpeed;
     } else if (state.braid.geometryMode == 17) {
         inputs.paused = state.hopf.paused;
         inputs.animationSpeed = state.hopf.animationSpeed;
