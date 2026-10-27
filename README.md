@@ -178,6 +178,23 @@ superellipsoid and on into its inscribed sphere. **Keep cubes apart** holds the 
 ratio low enough that no cube ever touches the next, however they turn. Frames keep
 the same point spacing on every cube. Launch it with `--preset nested-cubes`.
 
+**Infinite zoom** (on by default) turns the nest into an endless flight: every cube
+grows out past the camera while a new one is born in the middle, and after one level
+the picture is exactly where it started, so loops are seamless. While zooming each
+cube carries the same points and takes its colour and its turn from its depth: it
+spins about an axis that wanders with depth and is twisted against its neighbours by
+**Twist per level**. **Perspective** puts the camera at **Camera distance** outer
+sizes, so the cubes swell as they pass it.
+
+**Hopf fibration** draws the circles of the Hopf fibration seen through stereographic
+projection: every circle is linked with every other, and the circles over one latitude
+fill a torus, so the tori nest. Lights run along every circle, the circles drift from
+one base point to the next, and a tilt in four dimensions rolls the tori through each
+other. Launch it with `--preset hopf-fibration`. Controls cover light flow, drift,
+spin, 4D tumble and its rate, breathing, the number of tori and circles, their
+latitudes, scale, tube radius, point counts, point appearance and tilt; the tori take
+the palette colours.
+
 **Effects** is a separate window whose settings apply to the points of every geometry.
 **Drift** moves neighbouring points together in a slow flow and **Jitter** makes each
 tremble on its own; both slide points along the surface or away from it. **Shed

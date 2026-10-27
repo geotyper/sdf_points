@@ -72,7 +72,7 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 16, "Built-in preset count");
+    check(registry.all().size() == 17, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
     check(registry.require("nested-spheres").initialGeometryMode == 4,
@@ -632,6 +632,17 @@ void testTentaclePatch() {
               vkexp::nestedCubePoints(24000, 0.25, 0.5) == 2616,
           "Frames and smaller cubes keep the spacing");
     check(vkexp::nestedCubePoints(24000, 0.0, 0.1) == 24, "Every strip keeps a point");
+    // The zoom offset wraps once per level and, in a loop, the whole number of
+    // levels makes the last frame meet the first.
+    check(std::abs(vkexp::cubeZoomOffset(3.14159265358979323846, 1.0, 0.0) - 0.5) < 1e-12,
+          "Half a flow cycle is half a level");
+    const double loopEnd = vkexp::cubeZoomOffset(6.28318530717958647692 * 3.0, 4.3, 3.0);
+    check(std::min(loopEnd, 1.0 - loopEnd) < 1e-9,
+          "A zoom loop returns to its start");
+    check(registry.require("hopf-fibration").initialGeometryMode == 17,
+          "Hopf fibration initial geometry");
+    check(vkexp::loopDriverLabel(17, vkexp::LoopDriver::Flow) == "Fibre flows",
+          "Hopf loop label");
     const vkexp::BumpyTorusSettings chain = vkexp::torusChainDefaults();
     check(chain.tubeRadius <= vkexp::torusChainTubeLimit(chain),
           "Chain links fit through each other by default");

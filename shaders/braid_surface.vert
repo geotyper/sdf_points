@@ -30,9 +30,48 @@ void main() {
         vec2 ab = vec2(ivec2(faceCell / side, faceCell % side) + corners[gl_VertexIndex % 6])
                 * (2.0 / float(side)) - 1.0;
         sphereLocalDirection = vec3(ab, 0.0);
-        float cube = float(gl_InstanceIndex);
-        gl_Position = projectPoint(nestedCubeSize(cube) * rotateSphereDirection(
-            roundedCubePoint(cubeFacePoint(face, ab)), cube));
+        float depth = cubeDepth(float(gl_InstanceIndex));
+        // A fading cube no longer hides what is behind it.
+        if (cubeFade(depth) < 0.5) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            return;
+        }
+        vec3 position = nestedCubeSize(depth) * turnCube(roundedCubePoint(cubeFacePoint(face, ab)), depth);
+        if (pc.loop.y > 0.0) {
+            // Cells reaching the camera are dropped whole, decided at their centre.
+            vec2 middle = (vec2(faceCell / side, faceCell % side) + 0.5) * (2.0 / float(side)) - 1.0;
+            vec3 centre = nestedCubeSize(depth)
+                        * turnCube(roundedCubePoint(cubeFacePoint(face, middle)), depth);
+            if (toView(centre).z > 0.9 * cubeCameraDistance()) {
+                gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+                return;
+            }
+        }
+        gl_Position = projectPoint(position);
+        return;
+    }
+    if (hopfMode()) {
+        // One instance per fibre: 240 rows along it, 24 around its tube.
+        const ivec2 grid = ivec2(240, 24);
+        int fibers = max(int(pc.points.w + 0.5), 1);
+        float torus = float(gl_InstanceIndex / fibers);
+        float fiber = float(gl_InstanceIndex % fibers);
+        int row = cell / grid.y;
+        // Fibres through the far region are dropped a whole row at a time.
+        if (row >= grid.x
+            || length(hopfPoint(2.0 * TAU * float(row) / float(grid.x), torus, fiber)) > hopfCutoff()
+            || length(hopfPoint(2.0 * TAU * float(row + 1) / float(grid.x), torus, fiber))
+                   > hopfCutoff()) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            return;
+        }
+        ivec2 corner = ivec2(row, cell % grid.y) + corners[gl_VertexIndex % 6];
+        material = TAU * vec2(corner) / vec2(grid);
+        vec3 center, normal, binormal;
+        hopfFrame(2.0 * material.x, torus, fiber, center, normal, binormal);
+        // A hair inside the points, so they sit on the skin and not under it.
+        gl_Position = projectPoint(center + 0.97 * pc.shape.y
+                                   * (normal * cos(material.y) + binormal * sin(material.y)));
         return;
     }
     if (tentacleMode()) {

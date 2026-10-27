@@ -38,4 +38,14 @@ namespace vkexp {
     return 24 * std::max(1, static_cast<int>(std::lround(solidPoints * share / 24.0)));
 }
 
+// How far the zoom has carried every cube out of its slot, 0 .. 1 levels: the
+// same rounding as the shader's timePhase, so a loop ends where it began.
+[[nodiscard]] inline double cubeZoomOffset(const double phase, const double rate,
+                                           const double loopCycles) {
+    constexpr double tau = 6.28318530717958647692;
+    const double rounded = loopCycles > 0.0 ? std::round(rate * loopCycles) / loopCycles : rate;
+    const double wrapped = std::fmod(phase * rounded, tau);
+    return (wrapped < 0.0 ? wrapped + tau : wrapped) / tau;
+}
+
 } // namespace vkexp

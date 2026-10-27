@@ -81,7 +81,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                        "Sleeve",        "Morphing sleeve", "Vortex ring",
                                        "Ridged torus",  "Ridged braid",    "Tentacle sphere",
                                        "Bumpy torus",   "Torus chain",     "Sphere eversion",
-                                       "Arched sphere", "Nested cubes"};
+                                       "Arched sphere", "Nested cubes",    "Hopf fibration"};
     const auto geometryCount = static_cast<int>(geometryNames.size());
     braid.geometryMode = std::clamp(braid.geometryMode, 0, geometryCount - 1);
     if (ImGui::BeginCombo("Geometry",
@@ -96,7 +96,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             }
         };
         group("Braids", {0, 1, 2, 3, 10});
-        group("Spheres", {4, 16, 11, 15});
+        group("Spheres", {4, 16, 11, 15, 17});
         group("Eversion", {5, 14, 6, 7, 8, 9, 12, 13});
         ImGui::EndCombo();
     }
@@ -104,7 +104,23 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         auto& cubes = state_.nestedCubes;
         ImGui::Checkbox("Pause", &cubes.paused);
         ImGui::SliderFloat("Rotation speed", &cubes.animationSpeed, 0.0F, 1.5F, "%.2f");
-        ImGui::SliderFloat("Speed variation", &cubes.speedVariation, 0.0F, 1.0F, "%.2f");
+        ImGui::Checkbox("Infinite zoom", &cubes.zoom);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Cubes grow out past the camera while new ones are born inside.");
+        }
+        if (cubes.zoom) {
+            ImGui::SliderFloat("Zoom rate", &cubes.zoomRate, 0.0F, 12.0F, "%.1f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Levels passed per flow cycle.");
+            }
+            ImGui::SliderAngle("Twist per level", &cubes.zoomTwist, -90.0F, 90.0F);
+        } else {
+            ImGui::SliderFloat("Speed variation", &cubes.speedVariation, 0.0F, 1.0F, "%.2f");
+        }
+        ImGui::Checkbox("Perspective", &cubes.perspective);
+        ImGui::BeginDisabled(!cubes.perspective);
+        ImGui::SliderFloat("Camera distance", &cubes.cameraDistance, 1.4F, 6.0F, "%.2f");
+        ImGui::EndDisabled();
         ImGui::SliderInt("Cubes", &cubes.cubeCount, 1, 8);
         ImGui::SliderFloat("Outer size", &cubes.outerSize, 0.40F, 1.10F, "%.2f");
         ImGui::SliderFloat("Size ratio", &cubes.sizeRatio, 0.25F, 0.95F, "%.2f");
@@ -152,6 +168,48 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         }
         if (cubes.cubeCount > static_cast<int>(state_.palette.colors.size())) {
             ImGui::TextDisabled("The palette repeats after color 5.");
+        }
+    } else if (braid.geometryMode == 17) {
+        auto& hopf = state_.hopf;
+        ImGui::Checkbox("Pause", &hopf.paused);
+        ImGui::SliderFloat("Speed", &hopf.animationSpeed, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Light flow", &hopf.flow, -6.0F, 6.0F, "%.1f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Lights running along every circle, per flow cycle.");
+        }
+        ImGui::SliderFloat("Fibre drift", &hopf.drift, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Spin", &hopf.spin, -2.0F, 2.0F, "%.2f");
+        ImGui::SliderAngle("4D tumble", &hopf.tumble, 0.0F, 90.0F);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Tilt in four dimensions: the tori roll through each other.");
+        }
+        ImGui::SliderFloat("Tumble rate", &hopf.tumbleRate, 0.0F, 4.0F, "%.2f");
+        ImGui::SliderFloat("Breathing", &hopf.breathing, 0.0F, 0.25F, "%.3f");
+        ImGui::SliderInt("Tori", &hopf.tori, 1, 6);
+        ImGui::SliderInt("Circles per torus", &hopf.fibers, 3, 32);
+        ImGui::SliderFloat("Inner latitude", &hopf.innerLatitude, 0.05F, 1.40F, "%.2f");
+        ImGui::SliderFloat("Outer latitude", &hopf.outerLatitude, 0.05F, 1.40F, "%.2f");
+        ImGui::SliderFloat("Scale", &hopf.scale, 0.25F, 1.00F, "%.2f");
+        ImGui::SliderFloat("Tube radius", &hopf.tubeRadius, 0.005F, 0.06F, "%.3f");
+        ImGui::SliderInt("Points along", &hopf.pointsAlong, 60, 600);
+        ImGui::SliderInt("Points around", &hopf.pointsAround, 2, 16);
+        ImGui::SliderFloat("Point radius (700px)", &hopf.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &hopf.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &hopf.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &hopf.tilt, -90.0F, 90.0F);
+        if (ImGui::Button("Reset fibration")) {
+            hopf = HopfSettings{};
+        }
+        ImGui::SeparatorText("Torus palette");
+        for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::Text("Color %d", static_cast<int>(i + 1));
+            ImGui::SameLine();
+            ImGui::ColorEdit3("##Torus color", state_.palette.colors[i].data());
+            ImGui::PopID();
+        }
+        if (ImGui::Button("Reset palette")) {
+            state_.palette.colors = StrandPalette{}.colors;
         }
     } else if (braid.geometryMode == 15) {
         auto& arched = state_.archedSphere;

@@ -260,6 +260,10 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             if (!state_.nestedCubes.paused) {
                 nestedSphereTime_ += frame.deltaSeconds * state_.nestedCubes.animationSpeed;
             }
+        } else if (state_.braid.geometryMode == 17) {
+            if (!state_.hopf.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.hopf.animationSpeed;
+            }
         } else if (state_.braid.geometryMode == 5) {
             if (!state_.eversion.paused) {
                 eversionTime_ += frame.deltaSeconds * state_.eversion.animationSpeed;
@@ -454,12 +458,48 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 -1.0F,
                 16.0F,
                 cubes.speedVariation,
-                0.0F,
-                0.0F,
-                0.0F,
+                cubes.zoom ? 1.0F : 0.0F,
+                cubes.zoomRate,
+                cubes.zoomTwist,
                 static_cast<float>(cubes.directionSeed),
                 0.0F,
                 0.0F,
+                0.0F,
+                loopCycles_,
+                cubes.perspective ? cubes.cameraDistance : 0.0F,
+                0.0F,
+                0.0F,
+            };
+        } else if (braid.geometryMode == 17) {
+            const auto& hopf = state_.hopf;
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                hopf.scale,
+                hopf.tubeRadius,
+                hopf.tumble,
+                hopf.tumbleRate,
+                static_cast<float>(hopf.pointsAlong),
+                static_cast<float>(hopf.pointsAround),
+                hopf.pointSize,
+                static_cast<float>(hopf.fibers),
+                hopf.tilt,
+                hopf.glow,
+                hopf.brightness,
+                static_cast<float>(hopf.tori),
+                -1.0F,
+                -1.0F,
+                -1.0F,
+                17.0F,
+                hopf.innerLatitude,
+                hopf.outerLatitude,
+                hopf.flow,
+                hopf.drift,
+                hopf.spin,
+                0.0F,
+                hopf.breathing,
                 0.0F,
                 loopCycles_,
                 0.0F,
@@ -876,7 +916,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, surfacePipeline_);
         const auto objectCount = static_cast<std::uint32_t>(
             braid.geometryMode == 4    ? state_.nestedSpheres.sphereCount
-            : braid.geometryMode == 16 ? cubes.cubeCount
+            : braid.geometryMode == 16 ? cubes.cubeCount + (cubes.zoom ? 1 : 0)
+            : braid.geometryMode == 17 ? state_.hopf.tori * state_.hopf.fibers
             : braid.geometryMode == 11 ? tentacle.tentacles + 1
             : braid.geometryMode == 15 ? arched.arches + 1
             : braid.geometryMode == 8  ? state_.vortex.strands
@@ -887,7 +928,9 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                                       : braid.strands);
         // See-through leaves the depth clear, so nothing hides any point.
         if (!fx.seeThrough) {
-            vkCmdDraw(commands, 720U * 64U * 6U, objectCount, 0, 0);
+            // A Hopf fibre's skin needs far fewer cells than the default grid.
+            vkCmdDraw(commands, braid.geometryMode == 17 ? 240U * 24U * 6U : 720U * 64U * 6U,
+                      objectCount, 0, 0);
         }
         vkCmdEndRendering(commands);
 
@@ -947,11 +990,27 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             }
         } else if (braid.geometryMode == 16) {
             // One draw per cube, like the spheres: its index, count and palette tint.
+            // While zooming every cube carries the outer one's points and takes
+            // its colour from its depth, so the colours flow outwards with it.
+            const double zoomOffset =
+                cubes.zoom ? cubeZoomOffset(nestedSphereTime_, cubes.zoomRate, loopCycles_) : 0.0;
+            const auto& colors = state_.palette.colors;
             for (std::uint32_t cube = 0; cube < objectCount; ++cube) {
                 const auto cubePointCount = static_cast<std::uint32_t>(nestedCubePoints(
                     cubes.pointCount, cubes.border,
-                    std::pow(static_cast<double>(cubeRatio), static_cast<double>(cube))));
-                const auto& tint = state_.palette.colors[cube % state_.palette.colors.size()];
+                    cubes.zoom ? 1.0
+                               : std::pow(static_cast<double>(cubeRatio),
+                                          static_cast<double>(cube))));
+                const double place = std::fmod(static_cast<double>(cube) - zoomOffset +
+                                                    static_cast<double>(colors.size()),
+                                                static_cast<double>(colors.size()));
+                const auto lower = static_cast<std::size_t>(place);
+                const auto& from = colors[lower % colors.size()];
+                const auto& to = colors[(lower + 1) % colors.size()];
+                const auto blend = static_cast<float>(place - std::floor(place));
+                const std::array tint{from[0] + (to[0] - from[0]) * blend,
+                                      from[1] + (to[1] - from[1]) * blend,
+                                      from[2] + (to[2] - from[2]) * blend};
                 vkCmdPushConstants(commands, pipelineLayout_,
                                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                    16U * sizeof(float), 3U * sizeof(float), tint.data());
@@ -962,6 +1021,24 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                     VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 25U * sizeof(float),
                     static_cast<std::uint32_t>(sizeof(cubeDraw)), cubeDraw.data());
                 vkCmdDraw(commands, 6, cubePointCount, 0, 0);
+            }
+        } else if (braid.geometryMode == 17) {
+            // One draw per torus with its palette colour; the shader reads which.
+            const auto& hopf = state_.hopf;
+            const auto torusPoints =
+                static_cast<std::uint32_t>(hopf.fibers * hopf.pointsAlong * hopf.pointsAround);
+            for (int torus = 0; torus < hopf.tori; ++torus) {
+                const auto& tint =
+                    state_.palette.colors[static_cast<std::size_t>(torus) %
+                                          state_.palette.colors.size()];
+                vkCmdPushConstants(commands, pipelineLayout_,
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   16U * sizeof(float), 3U * sizeof(float), tint.data());
+                const auto torusIndex = static_cast<float>(torus);
+                vkCmdPushConstants(commands, pipelineLayout_,
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   25U * sizeof(float), sizeof(float), &torusIndex);
+                vkCmdDraw(commands, 6, torusPoints, 0, 0);
             }
         } else if (braid.geometryMode == 5) {
             vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.eversion.pointCount), 0, 0);

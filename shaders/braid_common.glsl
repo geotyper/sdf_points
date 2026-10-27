@@ -76,6 +76,10 @@ bool nestedCubeMode() {
     return pc.style.w > 15.5 && pc.style.w < 16.5;
 }
 
+bool hopfMode() {
+    return pc.style.w > 16.5 && pc.style.w < 17.5;
+}
+
 float hashScalar(float value) {
     return fract(sin(value * 127.1) * 43758.5453123);
 }
@@ -174,6 +178,8 @@ vec3 nestedSpherePoint(float longitude, float latitudeParameter, float sphere) {
 // outer half-size, size ratio between neighbours, border width (face units, 1 =
 // solid faces), roundness (0 cube .. 1 sphere). Only a frame around the rim of
 // every face is solid, so the inner cubes show through the windows.
+// wave.yzw: infinite zoom on, zoom levels per flow cycle, twist per level;
+// loop.y: camera distance in outer sizes (0 = orthographic).
 //
 // Roundness turns the cube into a superellipsoid |x|^n + |y|^n + |z|^n = 1 whose
 // exponent falls from 40 (all but a cube) to 2 (the inscribed sphere).
@@ -181,8 +187,39 @@ float cubeExponent() {
     return 2.0 / mix(0.05, 1.0, pc.shape.w);
 }
 
-float nestedCubeSize(float cube) {
-    return pc.shape.x * pow(pc.shape.y, cube);
+float nestedCubeSize(float depth) {
+    return pc.shape.x * pow(pc.shape.y, depth);
+}
+
+bool cubeZoom() {
+    return pc.wave.y > 0.5;
+}
+
+// Depth of the cube drawn in this slot, in levels below the outer size. While
+// zooming every cube slides one level out per zoom cycle; the slots hand over
+// at the cycle's end, so the picture repeats exactly.
+float cubeDepth(float slot) {
+    return cubeZoom() ? slot - timePhase(pc.wave.z) / TAU : slot;
+}
+
+// The cube leaving past the camera fades out, the one born inside fades in.
+float cubeFade(float depth) {
+    if (!cubeZoom()) return 1.0;
+    return smoothstep(-1.0, -0.45, depth) * (1.0 - smoothstep(pc.points.w - 1.0, pc.points.w, depth));
+}
+
+// While zooming the turn belongs to the depth, not to the cube: each cube spins
+// about an axis that wanders with depth and is twisted against its neighbours.
+vec3 turnCube(vec3 direction, float depth) {
+    if (!cubeZoom()) return rotateSphereDirection(direction, depth);
+    float place = depth + 3.1 * pc.motion.x;
+    vec3 axis = normalize(vec3(sin(1.7 * place + 0.3), 0.8, cos(1.1 * place + 1.0)));
+    direction = rotateAroundAxis(direction, vec3(0.0, 1.0, 0.0), pc.wave.w * depth);
+    return rotateAroundAxis(direction, axis, timePhase(1.0));
+}
+
+float cubeCameraDistance() {
+    return pc.loop.y * pc.shape.x;
 }
 
 // Half the outer cube's diagonal at the current roundness, with a margin.
@@ -210,6 +247,67 @@ vec3 roundedCubePoint(vec3 cubePoint) {
 vec3 roundedCubeNormal(vec3 p) {
     vec3 a = abs(p) / max(abs(p.x), max(abs(p.y), abs(p.z)));
     return normalize(sign(p) * pow(a, vec3(cubeExponent() - 1.0)));
+}
+
+// Hopf fibration: every point of the sphere S^2 has a circle of S^3 over it,
+// and any two of these circles are linked. Seen through stereographic
+// projection the fibres over one latitude fill a torus, and the tori nest.
+// shape = scale, tube radius, 4D tumble angle, tumble rate; points = samples
+// along a fibre, around its tube, pixel radius, fibres per torus; look.w =
+// tori; wave = innermost and outermost latitude, light flow rate, fibre drift
+// rate; motion.x = spin rate, motion.y = torus drawn, motion.z = breathing.
+float hopfLatitude(float torus) {
+    float tori = max(pc.look.w, 1.0);
+    return mix(pc.wave.x, pc.wave.y, torus / max(tori - 1.0, 1.0))
+         + pc.motion.z * sin(timePhase(1.0) + TAU * torus / tori);
+}
+
+float hopfSpan() {
+    return pc.shape.x * 3.4;
+}
+
+// Fibres reaching further than this pass near the projection pole: dropped.
+float hopfCutoff() {
+    return pc.shape.x * 6.0;
+}
+
+// Point at fibre parameter t (0 .. 4 pi once around) of one fibre of a torus.
+vec3 hopfPoint(float t, float torus, float fiber) {
+    float eta = hopfLatitude(torus);
+    // Neighbouring tori are staggered by half a fibre.
+    float alpha = TAU * (fiber + 0.5 * mod(torus, 2.0)) / max(pc.points.w, 1.0);
+    // Turning z1 and z2 against each other moves every fibre to the next base
+    // point; a whole turn of beta returns every point, so the drift loops.
+    float beta = timePhase(pc.wave.w);
+    float first = 0.5 * (t + alpha) + beta, second = 0.5 * (t - alpha) - beta;
+    vec4 q = vec4(cos(eta) * vec2(cos(first), sin(first)),
+                  sin(eta) * vec2(cos(second), sin(second)));
+    // A tilt in 4D rolls the tori through each other and through infinity.
+    float tumble = pc.shape.z * sin(timePhase(pc.shape.w));
+    float c = cos(tumble), s = sin(tumble);
+    q = vec4(c * q.x - s * q.w, q.y, q.z, s * q.x + c * q.w);
+    vec3 p = q.xyz / max(1.0 - q.w, 1e-4);
+    float spin = timePhase(pc.motion.x);
+    p.xz = mat2(cos(spin), sin(spin), -sin(spin), cos(spin)) * p.xz;
+    return pc.shape.x * p;
+}
+
+// Tube frame around a fibre: every fibre is a circle, so its curvature points
+// at the centre and gives a normal that never flips.
+void hopfFrame(float t, float torus, float fiber, out vec3 center, out vec3 normal,
+               out vec3 binormal) {
+    const float step = 0.02;
+    center = hopfPoint(t, torus, fiber);
+    vec3 ahead = hopfPoint(t + step, torus, fiber);
+    vec3 behind = hopfPoint(t - step, torus, fiber);
+    vec3 tangent = normalize(ahead - behind);
+    vec3 bend = ahead + behind - 2.0 * center;
+    bend -= tangent * dot(bend, tangent);
+    if (dot(bend, bend) < 1e-14) {
+        bend = cross(tangent, abs(tangent.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0));
+    }
+    normal = normalize(bend);
+    binormal = cross(tangent, normal);
 }
 
 // Inside a face's window, away from its frame.
@@ -1178,8 +1276,18 @@ vec4 projectView(vec3 p) {
     if (nestedCubeMode()) {
         span = nestedCubeSpan();
     }
+    if (hopfMode()) {
+        span = hopfSpan();
+    }
     vec2 scale = min(pc.view.x, pc.view.y) / pc.view.xy;
-    return vec4(p.xy * vec2(1.0, -1.0) * scale / span, (4.0 - p.z) / 8.0, 1.0);
+    vec4 clip = vec4(p.xy * vec2(1.0, -1.0) * scale / span, (4.0 - p.z) / 8.0, 1.0);
+    if (nestedCubeMode() && pc.loop.y > 0.0) {
+        // Perspective for flying through the cubes; sizes at the centre stay put.
+        // Whatever reaches the camera is dropped by the callers first.
+        float distance = cubeCameraDistance();
+        clip *= max(distance - p.z, 1e-4) / distance;
+    }
+    return clip;
 }
 
 vec4 projectPoint(vec3 p) {

@@ -94,7 +94,8 @@ void main() {
     if (nestedCubeMode()) {
         // Each face's frame is four equal strips laid as a pinwheel; every
         // strip gets a grid of points with the same spacing both ways.
-        int cube = int(pc.motion.y + 0.5);
+        float depth = cubeDepth(float(int(pc.motion.y + 0.5)));
+        float fade = cubeFade(depth);
         int perStrip = max(int(pc.motion.z + 0.5) / 24, 1);
         int strip = gl_InstanceIndex / perStrip;
         int sampleIndex = gl_InstanceIndex % perStrip;
@@ -103,7 +104,7 @@ void main() {
         int rows = max(int(round(sqrt(float(perStrip) * border / stripLength))), 1);
         int columns = max(perStrip / rows, 1);
         int row = sampleIndex / columns, column = sampleIndex % columns;
-        if (strip >= 24 || row >= rows) {
+        if (strip >= 24 || row >= rows || fade < 0.005) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
             pointColor = vec3(0.0);
             pointFacing = 0.0;
@@ -115,21 +116,77 @@ void main() {
             ab = vec2(-ab.y, ab.x);
         }
         vec3 local = roundedCubePoint(cubeFacePoint(strip / 4, ab));
-        vec3 position = nestedCubeSize(float(cube)) * rotateSphereDirection(local, float(cube));
-        vec3 normal = toView(rotateSphereDirection(roundedCubeNormal(local), float(cube)));
+        vec3 position = nestedCubeSize(depth) * turnCube(local, depth);
+        vec3 normal = toView(turnCube(roundedCubeNormal(local), depth));
+        float nearness = 1.0;
+        if (pc.loop.y > 0.0) {
+            float distance = cubeCameraDistance();
+            float viewDepth = toView(position).z;
+            if (viewDepth > 0.92 * distance) {
+                gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+                pointColor = vec3(0.0);
+                pointFacing = 0.0;
+                return;
+            }
+            nearness = distance / (distance - viewDepth);
+        }
         vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
         // Both sides light up: the far faces are seen from inside, through the windows.
         float diffuse = abs(dot(normal, light));
         float illumination = 0.10 + 0.90 * pow(diffuse, 0.8);
         float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
                            * mix(0.36, 1.0, illumination);
+        if (cubeZoom()) {
+            // Every cube carries the same points, so they shrink with it: the
+            // picture is the same at every level.
+            radiusPixels *= clamp(pow(pc.shape.y, depth) * nearness, 0.3, 2.5);
+        }
         radiusPixels = max(radiusPixels, 0.30);
         vec3 tint = pc.style.x >= 0.0 ? pc.style.rgb : vec3(0.55, 0.72, 1.0);
-        pointColor = tint * illumination * pc.look.z;
+        pointColor = tint * illumination * pc.look.z * fade;
         // The depth skin alone decides what is hidden.
         pointFacing = 1.0;
 
         vec4 clip = effectClip(position, normal, radiusPixels);
+        clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy * clip.w;
+        gl_Position = clip;
+        disc *= (radiusPixels + 0.65) / radiusPixels;
+        return;
+    }
+
+    if (hopfMode()) {
+        // One draw per torus: fibres of staggered rows around a thin tube.
+        int along = max(int(pc.points.x + 0.5), 1), around = max(int(pc.points.y + 0.5), 1);
+        int fiber = gl_InstanceIndex / (along * around);
+        int sampleIndex = gl_InstanceIndex % (along * around);
+        int row = sampleIndex / around, column = sampleIndex % around;
+        float t = 2.0 * TAU * (float(row) + 0.5 * float(column % 2)) / float(along);
+        float v = TAU * float(column) / float(around);
+        float torus = pc.motion.y;
+        vec3 center, normal, binormal;
+        hopfFrame(t, torus, float(fiber), center, normal, binormal);
+        if (length(center) > hopfCutoff()) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            pointColor = vec3(0.0);
+            pointFacing = 0.0;
+            return;
+        }
+        vec3 outward = normal * cos(v) + binormal * sin(v);
+        vec3 position = center + pc.shape.y * outward;
+        vec3 viewNormal = toView(outward);
+        vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
+        float diffuse = max(dot(viewNormal, light), 0.0);
+        float illumination = 0.10 + 0.90 * pow(diffuse, 0.8);
+        float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
+                           * mix(0.36, 1.0, illumination);
+        radiusPixels = max(radiusPixels, 0.30);
+        // A light runs along every fibre, carried by the material.
+        float pulse = pow(0.5 + 0.5 * cos(0.5 * t - timePhase(pc.wave.z)), 8.0);
+        vec3 tint = pc.style.x >= 0.0 ? pc.style.rgb : vec3(0.55, 0.72, 1.0);
+        pointColor = (tint * (0.40 + 0.85 * pulse) + 0.25 * pulse) * illumination * pc.look.z;
+        pointFacing = smoothstep(-0.015, 0.025, viewNormal.z);
+
+        vec4 clip = effectClip(position, viewNormal, radiusPixels);
         clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
         gl_Position = clip;
         disc *= (radiusPixels + 0.65) / radiusPixels;
