@@ -775,11 +775,13 @@ void testAlgebraicKnot() {
 }
 
 void testFourSurfaces() {
-    check(vkexp::fourSurfacePatches(0, 5) == 25 && vkexp::fourSurfacePatches(3, 5) == 1,
+    check(vkexp::fourSurfacePatches({0, 5}) == 25 && vkexp::fourSurfacePatches({3, 5}) == 1,
           "Calabi-Yau has n^2 patches, the others one");
+    check(vkexp::fourSurfacePatches({4, 2, 3, 4}) == 24, "Milnor: p q patches per sheet");
     for (int surface = 0; surface < vkexp::fourSurfaceCount; ++surface) {
-        const auto grid = vkexp::fourSurfaceGrid(surface, 5, 1.0, 500000);
-        const int points = grid.columns * grid.rows * vkexp::fourSurfacePatches(surface, 5);
+        const vkexp::FourSurfaceShape shape{surface, 5, 3, 4, 1.0};
+        const auto grid = vkexp::fourSurfaceGrid(shape, 500000);
+        const int points = grid.columns * grid.rows * vkexp::fourSurfacePatches(shape);
         check(points <= 500000 && points > 450000, "4D surface points fill their budget");
         const auto defaults = vkexp::fourSurfaceDefaults(surface);
         check(defaults.surface == surface, "4D surface defaults keep the surface");

@@ -265,7 +265,9 @@ spins.
 coordinates, so the points ride the surface: a slice of the Calabi-Yau quintic
 z1^n + z2^n = 1 in Hanson's n x n patches (each its own palette colour), the Klein
 bottle without self-crossing, the Veronese surface (the projective plane) and the
-Clifford torus. They turn in the XW, YW and ZW planes and are projected flat or with
+Clifford torus, and the **Milnor fibration** of a torus knot: sheets spanning the
+(p, q) knot (the trefoil by default), each its own colour, turning round it so that
+together they sweep the whole 3-sphere. They turn in the XW, YW and ZW planes and are projected flat or with
 a 4D camera; near the camera the Clifford torus turns inside out, as in a
 stereographic projection. **Material flow** carries the points round the closed
 surfaces and **Pulse** runs bands of light along them; a depth skin hides the far

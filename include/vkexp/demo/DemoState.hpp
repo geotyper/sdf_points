@@ -280,14 +280,16 @@ struct JuliaSettings {
 struct FourSurfaceSettings {
     bool paused{};
     int surface{0};    // FourSurface
-    int power{5};      // Calabi-Yau: z1^n + z2^n = 1
-    float reach{1.0F}; // Calabi-Yau: how far each patch runs out
+    int power{5};      // Calabi-Yau: z1^n + z2^n = 1; Milnor: the knot's p
+    int powerQ{3};     // Milnor: the knot's q
+    int fibres{4};     // Milnor: sheets shown at once
+    float reach{1.0F}; // Calabi-Yau and Milnor: how far each patch runs out
     float viewAngle{0.785F}; // the fixed ZW turn mixing the two imaginary parts
     float turnXW{0.0F};
     float turnYW{0.0F};
     float turnZW{1.0F};
     float cameraDistance{0.0F}; // 4D perspective; 0 is a flat projection
-    float flow{0.0F};           // material sliding round the closed surfaces
+    float flow{0.0F}; // material sliding round the closed surfaces; Milnor: sheets turning
     float pulse{0.0F};
     float pulseRate{1.0F};
     int pulseWaves{3};
@@ -328,6 +330,17 @@ struct FourSurfaceSettings {
         settings.cameraDistance = 1.15F;
         settings.flow = 1.0F;
         settings.zoom = 0.5F;
+    } else if (surface == 4) {
+        // Trefoil sheets, seen stereographically: they turn round the knot
+        // and sweep the whole 3-sphere.
+        settings.power = 2;
+        settings.powerQ = 3;
+        settings.reach = 3.0F;
+        settings.viewAngle = 0.0F;
+        settings.turnZW = 0.0F;
+        settings.cameraDistance = 1.0F;
+        settings.flow = 0.5F;
+        settings.zoom = 0.55F;
     }
     return settings;
 }

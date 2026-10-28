@@ -1,5 +1,6 @@
 // Surfaces that live in 4D (mode 22): a slice of the Calabi-Yau quintic, the
-// Klein bottle, the Veronese surface and the Clifford torus. Every patch has
+// Klein bottle, the Veronese surface, the Clifford torus and the sheets of the
+// Milnor fibration of a torus knot. Every patch has
 // its own coordinates (s, t) in [0, 1]^2; the points sit on a grid of them and
 // the depth skin is a mesh of them, so the points ride the surface while it
 // turns in 4D and is projected to 3D.
@@ -10,7 +11,8 @@
 // rate; motion = YW turn rate, ZW turn rate, fixed ZW view angle, pulse rate;
 // loop = cycles, 4D camera distance (0 = flat), pulse strength, zoom.
 // The polytope storage buffer holds the palette in its first five vec4 and,
-// in the sixth, the flow rate and the pulse's waves along s.
+// in the sixth: the flow rate (Milnor: sheet turn rate), the pulse's waves
+// along s, the knot's q and how many Milnor sheets.
 
 // Magnifications past this are too near the 4D camera and left out.
 const float FOUR_SURFACE_NEAR = 6.0;
@@ -25,7 +27,7 @@ int fermatPower() {
 
 // Matches fourSurfaceSkinGrid in FourSurfaces.hpp.
 ivec2 fourSurfaceSkinGrid() {
-    return fourSurface() == 0 ? ivec2(96, 96) : ivec2(256, 192);
+    return fourSurface() == 0 || fourSurface() == 4 ? ivec2(96, 96) : ivec2(256, 192);
 }
 
 vec3 fourSurfacePalette(float index) {
@@ -61,6 +63,36 @@ vec4 fourSurfaceLocal(int piece, vec2 st, out float tag) {
         vec2 z2 = complexTimes(complexPower(s, p), vec2(cos(a2), sin(a2)));
         tag = float(k1 + 2 * k2);
         return vec4(z1.x, z2.x, z1.y, z2.y);
+    }
+    if (surface == 4) {
+        // Milnor fibration of z1^p + z2^q: the affine curve z1^p + z2^q = 1,
+        // in Hanson's patches, pushed onto the 3-sphere by the weighted scaling
+        // (t^(1/p) z1, t^(1/q) z2), which keeps f real and positive. Turning by
+        // (e^(i a / p), e^(i a / q)) turns f by e^(i a): one sheet sweeps to the
+        // next, and a whole turn carries the sheet onto itself. The far ends of
+        // the strip run into the knot f = 0 they span.
+        int p = fermatPower(), q = max(int(polytopeData[5].z + 0.5), 2);
+        int sheets = max(int(polytopeData[5].w + 0.5), 1);
+        int sheet = piece / (p * q), rest = piece % (p * q);
+        int k1 = rest / q, k2 = rest % q;
+        float x = 0.5 * PI * st.x, y = pc.shape.w * (2.0 * st.y - 1.0);
+        vec2 c = vec2(cos(x) * cosh(y), -sin(x) * sinh(y));
+        vec2 s = vec2(sin(x) * cosh(y), cos(x) * sinh(y));
+        float a1 = TAU * float(k1) / float(p), a2 = TAU * float(k2) / float(q);
+        vec2 z1 = complexTimes(complexPower(c, 2.0 / float(p)), vec2(cos(a1), sin(a1)));
+        vec2 z2 = complexTimes(complexPower(s, 2.0 / float(q)), vec2(cos(a2), sin(a2)));
+        // log t from |z1|^2 t^(2/p) + |z2|^2 t^(2/q) = 1: convex and rising, so
+        // Newton gets there from any start.
+        float m1 = dot(z1, z1), m2 = dot(z2, z2), g = 0.0;
+        for (int i = 0; i < 24; ++i) {
+            float e1 = m1 * exp(2.0 * g / float(p)), e2 = m2 * exp(2.0 * g / float(q));
+            g -= (e1 + e2 - 1.0) / max(2.0 * e1 / float(p) + 2.0 * e2 / float(q), 1e-6);
+        }
+        float a = timePhase(polytopeData[5].x) + TAU * float(sheet) / float(sheets);
+        z1 = complexTimes(z1, vec2(cos(a / float(p)), sin(a / float(p)))) * exp(g / float(p));
+        z2 = complexTimes(z2, vec2(cos(a / float(q)), sin(a / float(q)))) * exp(g / float(q));
+        tag = float(sheet);
+        return vec4(z1, z2);
     }
     float u = TAU * st.x, v = TAU * st.y;
     if (surface == 1) {
@@ -138,7 +170,7 @@ vec3 fourSurfaceNormal(int piece, vec2 st) {
 // (along t, whole turns there), the others round s.
 vec2 fourSurfaceFlow(vec2 st) {
     int surface = fourSurface();
-    if (surface == 0) return st;
+    if (surface == 0 || surface == 4) return st;
     float shift = timePhase(polytopeData[5].x) / TAU;
     if (surface == 1) return vec2(st.x, fract(st.y + shift));
     return vec2(fract(st.x + shift), st.y);

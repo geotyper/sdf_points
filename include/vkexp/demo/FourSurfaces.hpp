@@ -1,7 +1,8 @@
 #pragma once
 
 // Surfaces that live in 4D (geometry mode 22): a slice of the Calabi-Yau
-// quintic, the Klein bottle, the Veronese surface and the Clifford torus. The
+// quintic, the Klein bottle, the Veronese surface, the Clifford torus and the
+// fibres of the Milnor fibration of a torus knot. The
 // shader (surfaces4d.glsl) puts the points on a grid of every patch's own
 // coordinates (s, t) in [0, 1]^2, turns the surface in 4D and projects it, so
 // the points ride the surface. Here: how many patches, and how the point
@@ -19,14 +20,36 @@ enum class FourSurface : int {
     KleinBottle = 1, // without self-crossing, as only 4D allows
     Veronese = 2,    // the real projective plane
     CliffordTorus = 3, // the flat torus on the 3-sphere
+    MilnorFibres = 4,  // sheets spanning the (p, q) torus knot, p q patches each
 };
 
-inline constexpr int fourSurfaceCount = 4;
+inline constexpr int fourSurfaceCount = 5;
 inline constexpr std::array<const char*, fourSurfaceCount> fourSurfaceNames{
-    "Calabi-Yau (Fermat)", "Klein bottle", "Veronese surface", "Clifford torus"};
+    "Calabi-Yau (Fermat)", "Klein bottle", "Veronese surface", "Clifford torus",
+    "Milnor fibration"};
 
-[[nodiscard]] inline int fourSurfacePatches(const int surface, const int power) {
-    return surface == static_cast<int>(FourSurface::CalabiYau) ? power * power : 1;
+// What the shape of a surface depends on beyond which one it is.
+struct FourSurfaceShape {
+    int surface{0};
+    int power{5};    // Calabi-Yau n, or the knot's p
+    int powerQ{3};   // the knot's q
+    int fibres{4};   // Milnor sheets shown at once
+    double reach{1.0};
+};
+
+[[nodiscard]] inline bool fourSurfaceIsStrip(const int surface) {
+    return surface == static_cast<int>(FourSurface::CalabiYau) ||
+           surface == static_cast<int>(FourSurface::MilnorFibres);
+}
+
+[[nodiscard]] inline int fourSurfacePatches(const FourSurfaceShape& shape) {
+    if (shape.surface == static_cast<int>(FourSurface::CalabiYau)) {
+        return shape.power * shape.power;
+    }
+    if (shape.surface == static_cast<int>(FourSurface::MilnorFibres)) {
+        return shape.power * shape.powerQ * shape.fibres;
+    }
+    return 1;
 }
 
 struct FourSurfaceGrid {
@@ -37,7 +60,8 @@ struct FourSurfaceGrid {
 // About how much longer a patch is along s than along t, once drawn.
 [[nodiscard]] inline double fourSurfaceAspect(const int surface, const double reach) {
     switch (static_cast<FourSurface>(surface)) {
-    case FourSurface::CalabiYau: return 1.5707963267948966 / std::max(2.0 * reach, 0.1);
+    case FourSurface::CalabiYau:
+    case FourSurface::MilnorFibres: return 1.5707963267948966 / std::max(2.0 * reach, 0.1);
     case FourSurface::KleinBottle: return 2.2;
     case FourSurface::Veronese: return 3.0;
     case FourSurface::CliffordTorus: return 1.0;
@@ -46,11 +70,9 @@ struct FourSurfaceGrid {
 }
 
 // Points of one patch, so all patches together stay within `budget`.
-[[nodiscard]] inline FourSurfaceGrid fourSurfaceGrid(const int surface, const int power,
-                                                     const double reach, const int budget) {
-    const double perPatch =
-        std::max(static_cast<double>(budget) / fourSurfacePatches(surface, power), 4.0);
-    const double aspect = fourSurfaceAspect(surface, reach);
+[[nodiscard]] inline FourSurfaceGrid fourSurfaceGrid(const FourSurfaceShape& shape, const int budget) {
+    const double perPatch = std::max(static_cast<double>(budget) / fourSurfacePatches(shape), 4.0);
+    const double aspect = fourSurfaceAspect(shape.surface, shape.reach);
     FourSurfaceGrid grid;
     grid.columns = std::max(static_cast<int>(std::sqrt(perPatch * aspect)), 2);
     grid.rows = std::max(static_cast<int>(perPatch / grid.columns), 2);
@@ -59,8 +81,7 @@ struct FourSurfaceGrid {
 
 // Cells of one patch's depth skin; the shader's fourSurfaceSkinGrid matches.
 [[nodiscard]] inline FourSurfaceGrid fourSurfaceSkinGrid(const int surface) {
-    return surface == static_cast<int>(FourSurface::CalabiYau) ? FourSurfaceGrid{96, 96}
-                                                               : FourSurfaceGrid{256, 192};
+    return fourSurfaceIsStrip(surface) ? FourSurfaceGrid{96, 96} : FourSurfaceGrid{256, 192};
 }
 
 } // namespace vkexp

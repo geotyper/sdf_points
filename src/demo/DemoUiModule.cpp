@@ -435,9 +435,25 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                 ImGui::SetTooltip("z1^n + z2^n = 1: n x n patches meeting at the branch points.");
             }
             ImGui::SliderFloat("Reach", &surface.reach, 0.3F, 1.8F, "%.2f");
+        }
+        if (surface.surface == 4) {
+            ImGui::SliderInt("Knot p", &surface.power, 2, 5);
+            ImGui::SliderInt("Knot q", &surface.powerQ, 2, 7);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Sheets spanning the (p, q) torus knot: z1^p + z2^q = 0 on the "
+                                  "3-sphere. Coprime p, q give one knot, others a link.");
+            }
+            ImGui::SliderInt("Sheets", &surface.fibres, 1, 8);
+            ImGui::SliderFloat("Reach", &surface.reach, 1.0F, 5.0F, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("How close the sheets come to the knot they span.");
+            }
+            ImGui::SliderFloat("Sheet turn", &surface.flow, -3.0F, 3.0F, "%.2f");
+        }
+        if (surface.surface == 0 || surface.surface == 4) {
             ImGui::SliderAngle("View angle", &surface.viewAngle, -180.0F, 180.0F);
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("How the two imaginary parts mix into the third axis.");
+                ImGui::SetTooltip("A fixed turn in the ZW plane before the moving ones.");
             }
         }
         constexpr std::array surfaceColors{"Patches", "Near to far", "Patches by 4D depth"};
@@ -454,7 +470,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             ImGui::SetTooltip("0 is a flat projection; near 1 the surface turns inside out "
                               "through the camera (stereographic for the torus).");
         }
-        if (surface.surface != 0) {
+        if (surface.surface != 0 && surface.surface != 4) {
             ImGui::SliderFloat("Material flow", &surface.flow, -3.0F, 3.0F, "%.2f");
         }
         ImGui::SliderFloat("Pulse", &surface.pulse, 0.0F, 2.0F, "%.2f");

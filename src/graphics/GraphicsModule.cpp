@@ -626,9 +626,10 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         // and pulse waves in the same buffer.
         const auto& surface4 = state_.fourSurface;
         const bool fourSurfaceMode = braid.geometryMode == 22;
-        const int surfacePatches = fourSurfacePatches(surface4.surface, surface4.power);
-        const FourSurfaceGrid surfaceGrid =
-            fourSurfaceGrid(surface4.surface, surface4.power, surface4.reach, surface4.pointBudget);
+        const FourSurfaceShape surfaceShape{surface4.surface, surface4.power, surface4.powerQ,
+                                            surface4.fibres, surface4.reach};
+        const int surfacePatches = fourSurfacePatches(surfaceShape);
+        const FourSurfaceGrid surfaceGrid = fourSurfaceGrid(surfaceShape, surface4.pointBudget);
         const FourSurfaceGrid surfaceSkin = fourSurfaceSkinGrid(surface4.surface);
         if (sectionMode || fourSurfaceMode) {
             std::array<float, 24> palette{};
@@ -638,6 +639,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             }
             palette[20] = surface4.flow;
             palette[21] = static_cast<float>(surface4.pulseWaves);
+            palette[22] = static_cast<float>(surface4.powerQ);
+            palette[23] = static_cast<float>(surface4.fibres);
             polytope_.write(palette.data(), sizeof(palette));
             // The figure's own edges are gone: rebuild them on return.
             polytopeKey_ = {-1, -1, -1};
