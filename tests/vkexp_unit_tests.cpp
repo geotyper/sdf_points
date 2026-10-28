@@ -4,6 +4,7 @@
 #include "vkexp/core/FrameClock.hpp"
 #include "vkexp/demo/ArchLattice.hpp"
 #include "vkexp/demo/DemoState.hpp"
+#include "vkexp/demo/FourSurfaces.hpp"
 #include "vkexp/demo/LoopPlan.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/PointLattice.hpp"
@@ -76,7 +77,7 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 21, "Built-in preset count");
+    check(registry.all().size() == 22, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
     check(registry.require("nested-spheres").initialGeometryMode == 4,
@@ -656,6 +657,9 @@ void testTentaclePatch() {
           "4D sections and Julia geometry");
     check(vkexp::loopDriverLabel(20, vkexp::LoopDriver::Flow) == "Slice sweeps",
           "4D sections loop label");
+    check(registry.require("surfaces-4d").initialGeometryMode == 22, "4D surfaces geometry");
+    check(vkexp::loopDriverLabel(22, vkexp::LoopDriver::Flow) == "Surface turns",
+          "4D surfaces loop label");
     const vkexp::BumpyTorusSettings chain = vkexp::torusChainDefaults();
     check(chain.tubeRadius <= vkexp::torusChainTubeLimit(chain),
           "Chain links fit through each other by default");
@@ -770,6 +774,18 @@ void testAlgebraicKnot() {
     check(hopfParts == 2, "z1^2 = z2^2 is a link of two loops");
 }
 
+void testFourSurfaces() {
+    check(vkexp::fourSurfacePatches(0, 5) == 25 && vkexp::fourSurfacePatches(3, 5) == 1,
+          "Calabi-Yau has n^2 patches, the others one");
+    for (int surface = 0; surface < vkexp::fourSurfaceCount; ++surface) {
+        const auto grid = vkexp::fourSurfaceGrid(surface, 5, 1.0, 500000);
+        const int points = grid.columns * grid.rows * vkexp::fourSurfacePatches(surface, 5);
+        check(points <= 500000 && points > 450000, "4D surface points fill their budget");
+        const auto defaults = vkexp::fourSurfaceDefaults(surface);
+        check(defaults.surface == surface, "4D surface defaults keep the surface");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -793,5 +809,6 @@ int main() {
     testQuasicrystal();
     testAlgebraicKnot();
     testHoneycomb();
+    testFourSurfaces();
     return failures == 0 ? 0 : 1;
 }

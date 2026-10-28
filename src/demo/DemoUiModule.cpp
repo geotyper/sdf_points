@@ -1,6 +1,7 @@
 #include "vkexp/demo/DemoUiModule.hpp"
 
 #include "vkexp/demo/DemoState.hpp"
+#include "vkexp/demo/FourSurfaces.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
@@ -101,7 +102,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                        "Bumpy torus",   "Torus chain",     "Sphere eversion",
                                        "Arched sphere", "Nested cubes",    "Hopf fibration",
                                        "Tesseract",     "4D polytopes",    "4D cross-sections",
-                                       "Quaternion Julia"};
+                                       "Quaternion Julia", "4D surfaces"};
     const auto geometryCount = static_cast<int>(geometryNames.size());
     braid.geometryMode = std::clamp(braid.geometryMode, 0, geometryCount - 1);
     if (ImGui::BeginCombo("Geometry",
@@ -117,7 +118,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         };
         group("Braids", {0, 1, 2, 3, 10});
         group("Spheres", {4, 16, 11, 15});
-        group("Four dimensions", {18, 19, 17, 20, 21});
+        group("Four dimensions", {18, 19, 17, 22, 20, 21});
         group("Eversion", {5, 14, 6, 7, 8, 9, 12, 13});
         ImGui::EndCombo();
     }
@@ -415,6 +416,68 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
             ImGui::PushID(static_cast<int>(i));
             ImGui::ColorEdit3("##Cell color", state_.palette.colors[i].data());
+            ImGui::PopID();
+        }
+    } else if (braid.geometryMode == 22) {
+        auto& surface = state_.fourSurface;
+        int chosen = std::clamp(surface.surface, 0, fourSurfaceCount - 1);
+        if (ImGui::Combo("Surface", &chosen, fourSurfaceNames.data(), fourSurfaceCount)) {
+            // Each surface comes with the motion that shows it best; colours stay.
+            const auto near = surface.nearColor;
+            const auto far = surface.farColor;
+            surface = fourSurfaceDefaults(chosen);
+            surface.nearColor = near;
+            surface.farColor = far;
+        }
+        if (surface.surface == 0) {
+            ImGui::SliderInt("Power n", &surface.power, 2, 7);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("z1^n + z2^n = 1: n x n patches meeting at the branch points.");
+            }
+            ImGui::SliderFloat("Reach", &surface.reach, 0.3F, 1.8F, "%.2f");
+            ImGui::SliderAngle("View angle", &surface.viewAngle, -180.0F, 180.0F);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("How the two imaginary parts mix into the third axis.");
+            }
+        }
+        constexpr std::array surfaceColors{"Patches", "Near to far", "Patches by 4D depth"};
+        ImGui::Combo("Colour by", &surface.colorMode, surfaceColors.data(),
+                     static_cast<int>(surfaceColors.size()));
+        ImGui::SeparatorText("Motion");
+        ImGui::Checkbox("Pause", &surface.paused);
+        ImGui::SliderFloat("Speed", &surface.animationSpeed, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("4D turn (XW)", &surface.turnXW, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("4D turn (YW)", &surface.turnYW, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("4D turn (ZW)", &surface.turnZW, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("4D camera distance", &surface.cameraDistance, 0.0F, 6.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0 is a flat projection; near 1 the surface turns inside out "
+                              "through the camera (stereographic for the torus).");
+        }
+        if (surface.surface != 0) {
+            ImGui::SliderFloat("Material flow", &surface.flow, -3.0F, 3.0F, "%.2f");
+        }
+        ImGui::SliderFloat("Pulse", &surface.pulse, 0.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Pulse rate", &surface.pulseRate, -4.0F, 4.0F, "%.2f");
+        ImGui::SliderInt("Pulse waves", &surface.pulseWaves, 1, 8);
+        ImGui::SliderFloat("Spin", &surface.spin, -2.0F, 2.0F, "%.2f");
+        ImGui::SeparatorText("Points");
+        ImGui::SliderInt("Point budget", &surface.pointBudget, 20000, 2000000, "%d",
+                         ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Point radius (700px)", &surface.pointSize, 0.4F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &surface.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &surface.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &surface.tilt, -90.0F, 90.0F);
+        ImGui::SliderFloat("Zoom", &surface.zoom, 0.25F, 4.0F, "%.2f", ImGuiSliderFlags_Logarithmic);
+        ImGui::ColorEdit3("Near color", surface.nearColor.data());
+        ImGui::ColorEdit3("Far color", surface.farColor.data());
+        if (ImGui::Button("Reset surface")) {
+            surface = fourSurfaceDefaults(surface.surface);
+        }
+        ImGui::SeparatorText("Patch palette");
+        for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::ColorEdit3("##Patch color", state_.palette.colors[i].data());
             ImGui::PopID();
         }
     } else if (braid.geometryMode == 21) {

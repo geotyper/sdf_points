@@ -35,7 +35,7 @@ struct ComputeOutput {
 };
 
 struct BraidSettings {
-    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes, 17: Hopf fibration, 18: tesseract, 19: 4D polytopes, 20: 4D cross-sections, 21: quaternion Julia
+    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes, 17: Hopf fibration, 18: tesseract, 19: 4D polytopes, 20: 4D cross-sections, 21: quaternion Julia, 22: 4D surfaces
     bool paused{};
     bool autoRotate{false};
     bool limitTubeOverlap{false};
@@ -274,6 +274,63 @@ struct JuliaSettings {
     std::array<float, 3> nearColor{1.00F, 0.62F, 0.16F};
     std::array<float, 3> farColor{0.14F, 0.58F, 1.00F};
 };
+
+// Surfaces living in 4D (FourSurfaces.hpp), turned there and projected; the
+// points sit on the surface's own grid.
+struct FourSurfaceSettings {
+    bool paused{};
+    int surface{0};    // FourSurface
+    int power{5};      // Calabi-Yau: z1^n + z2^n = 1
+    float reach{1.0F}; // Calabi-Yau: how far each patch runs out
+    float viewAngle{0.785F}; // the fixed ZW turn mixing the two imaginary parts
+    float turnXW{0.0F};
+    float turnYW{0.0F};
+    float turnZW{1.0F};
+    float cameraDistance{0.0F}; // 4D perspective; 0 is a flat projection
+    float flow{0.0F};           // material sliding round the closed surfaces
+    float pulse{0.0F};
+    float pulseRate{1.0F};
+    int pulseWaves{3};
+    int colorMode{0}; // 0 patches, 1 near to far in 4D, 2 patches shaded by 4D depth
+    float spin{0.1F};
+    float animationSpeed{0.25F};
+    float size{0.75F};
+    int pointBudget{500000};
+    float pointSize{0.9F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.35F};
+    float zoom{1.0F};
+    std::array<float, 3> nearColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> farColor{0.14F, 0.58F, 1.00F};
+};
+
+// What suits each surface: the Calabi-Yau turns its imaginary parts (Hanson's
+// picture), the torus turns inside out through the 4D camera.
+[[nodiscard]] inline FourSurfaceSettings fourSurfaceDefaults(const int surface) {
+    FourSurfaceSettings settings;
+    settings.surface = surface;
+    if (surface == 1) {
+        settings.turnXW = 0.5F;
+        settings.turnZW = 0.0F;
+        settings.turnYW = 1.0F;
+        settings.flow = 1.0F;
+        settings.colorMode = 2;
+        settings.zoom = 1.2F;
+    } else if (surface == 2) {
+        settings.turnXW = 1.0F;
+        settings.turnZW = 0.0F;
+        settings.flow = 1.0F;
+        settings.zoom = 1.3F;
+    } else if (surface == 3) {
+        settings.turnXW = 1.0F;
+        settings.turnZW = 0.0F;
+        settings.cameraDistance = 1.15F;
+        settings.flow = 1.0F;
+        settings.zoom = 0.5F;
+    }
+    return settings;
+}
 
 // Trail of the 4D figures: fading copies drawn at earlier moments, so the
 // projected motion paints its paths.
@@ -562,6 +619,7 @@ struct DemoState {
     FourDTrailSettings fourDTrail;
     SliceSettings slice;
     JuliaSettings julia;
+    FourSurfaceSettings fourSurface;
     EversionSettings eversion;
     SleeveSettings sleeve;
     MorphSettings morph;
@@ -601,6 +659,9 @@ struct DemoState {
     } else if (state.braid.geometryMode == 21) {
         inputs.paused = state.julia.paused;
         inputs.animationSpeed = state.julia.animationSpeed;
+    } else if (state.braid.geometryMode == 22) {
+        inputs.paused = state.fourSurface.paused;
+        inputs.animationSpeed = state.fourSurface.animationSpeed;
     } else if (state.braid.geometryMode == 19) {
         inputs.paused = state.polytope.paused;
         inputs.animationSpeed = state.polytope.animationSpeed;

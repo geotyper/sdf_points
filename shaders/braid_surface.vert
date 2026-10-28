@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 #include "braid_common.glsl"
 #include "polytope.glsl"
+#include "surfaces4d.glsl"
 
 const ivec2 corners[6] = ivec2[](ivec2(0, 0), ivec2(1, 0), ivec2(0, 1),
                                ivec2(0, 1), ivec2(1, 0), ivec2(1, 1));
@@ -55,6 +56,28 @@ void main() {
             }
         }
         gl_Position = projectPoint(position);
+        return;
+    }
+    if (fourSurfaceMode()) {
+        // One instance per patch, a mesh of its (s, t); cells reaching the 4D
+        // camera are dropped whole, decided at their corners.
+        ivec2 grid = fourSurfaceSkinGrid();
+        if (cell >= grid.x * grid.y) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            return;
+        }
+        ivec2 base = ivec2(cell / grid.y, cell % grid.y);
+        float tag, w, magnification;
+        for (int k = 0; k < 4; ++k) {
+            fourSurfacePoint(gl_InstanceIndex, vec2(base + ivec2(k & 1, k >> 1)) / vec2(grid),
+                             tag, w, magnification);
+            if (fourSurfaceTooClose(magnification)) {
+                gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+                return;
+            }
+        }
+        vec2 st = vec2(base + corners[gl_VertexIndex % 6]) / vec2(grid);
+        gl_Position = projectPoint(fourSurfacePoint(gl_InstanceIndex, st));
         return;
     }
     if (polytopeMode()) {

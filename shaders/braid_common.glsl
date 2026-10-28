@@ -97,6 +97,11 @@ bool juliaMode() {
     return pc.style.w > 20.5 && pc.style.w < 21.5;
 }
 
+// Surfaces living in 4D (surfaces4d.glsl).
+bool fourSurfaceMode() {
+    return pc.style.w > 21.5 && pc.style.w < 22.5;
+}
+
 // Both fit a ball of 1.2 sizes; loop.w zooms in.
 float sectionSpan() {
     return pc.shape.x * 1.2 * 1.25 / max(pc.loop.w, 0.05);
@@ -1410,7 +1415,7 @@ vec4 projectView(vec3 p) {
     if (polytopeMode()) {
         span = polytopeSpan();
     }
-    if (sliceMode() || juliaMode()) {
+    if (sliceMode() || juliaMode() || fourSurfaceMode()) {
         span = sectionSpan();
     }
     vec2 scale = min(pc.view.x, pc.view.y) / pc.view.xy;

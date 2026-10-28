@@ -3,6 +3,7 @@
 #include "braid_common.glsl"
 #include "polytope.glsl"
 #include "sections4d.glsl"
+#include "surfaces4d.glsl"
 
 layout(set = 0, binding = 3, std430) readonly buffer SectionHits {
     vec4 sectionHits[];
@@ -207,6 +208,51 @@ void main() {
         }
         pointColor = tint * illumination * pc.look.z;
         pointFacing = smoothstep(-0.02, 0.03, viewNormal.z);
+
+        vec4 clip = effectClip(position, viewNormal, radiusPixels);
+        clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
+        gl_Position = clip;
+        disc *= (radiusPixels + 0.65) / radiusPixels;
+        return;
+    }
+
+    if (fourSurfaceMode()) {
+        // One grid of staggered rows per patch, in the patch's own (s, t).
+        int columns = max(int(pc.points.x + 0.5), 1), rows = max(int(pc.points.y + 0.5), 1);
+        int piece = gl_InstanceIndex / (columns * rows);
+        int sampleIndex = gl_InstanceIndex % (columns * rows);
+        int row = sampleIndex / columns, column = sampleIndex % columns;
+        vec2 st = fourSurfaceFlow(vec2((float(column) + 0.25 + 0.5 * float(row % 2)) / float(columns),
+                                       (float(row) + 0.5) / float(rows)));
+        float tag, w, magnification;
+        vec3 position = fourSurfacePoint(piece, st, tag, w, magnification);
+        if (fourSurfaceTooClose(magnification)) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            pointColor = vec3(0.0);
+            pointFacing = 0.0;
+            return;
+        }
+        vec3 viewNormal = toView(fourSurfaceNormal(piece, st));
+        vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
+        // Both sides light up: the skin alone decides what is hidden.
+        float diffuse = abs(dot(viewNormal, light));
+        float illumination = 0.12 + 0.88 * pow(diffuse, 0.8);
+        float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
+                           * mix(0.36, 1.0, illumination) * clamp(sqrt(magnification), 0.5, 2.0);
+        radiusPixels = max(radiusPixels, 0.30);
+        // Colour: 0 patches (palette), 1 near to far in 4D, 2 patches shaded
+        // by 4D depth.
+        int colorMode = int(pc.points.w + 0.5);
+        float depth = smoothstep(-0.9, 0.9, w);
+        vec3 tint = colorMode == 1 ? mix(pc.wave.rgb, pc.style.rgb, depth)
+                  : colorMode == 2 ? fourSurfacePalette(tag) * mix(0.35, 1.25, depth)
+                                   : fourSurfacePalette(tag);
+        // A light running along s, carried by the surface.
+        float pulse = pow(0.5 + 0.5 * cos(TAU * polytopeData[5].y * st.x - timePhase(pc.motion.w)), 6.0);
+        tint = tint * (1.0 + pc.loop.z * pulse) + 0.25 * pc.loop.z * pulse;
+        radiusPixels *= 1.0 + 0.5 * pc.look.y * pc.loop.z * pulse;
+        pointColor = tint * illumination * pc.look.z;
+        pointFacing = 1.0;
 
         vec4 clip = effectClip(position, viewNormal, radiusPixels);
         clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;

@@ -5,6 +5,7 @@
 #include "vkexp/demo/ArchLattice.hpp"
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/HyperbolicHoneycomb.hpp"
+#include "vkexp/demo/FourSurfaces.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/PointLattice.hpp"
@@ -319,6 +320,10 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             if (!state_.slice.paused) {
                 eversionTime_ += frame.deltaSeconds * state_.slice.animationSpeed;
             }
+        } else if (state_.braid.geometryMode == 22) {
+            if (!state_.fourSurface.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.fourSurface.animationSpeed;
+            }
         } else if (state_.braid.geometryMode == 21) {
             if (!state_.julia.paused) {
                 eversionTime_ += frame.deltaSeconds * state_.julia.animationSpeed;
@@ -617,12 +622,22 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                                        (sectionFamilies * sectionCrossings))));
         const auto sectionInstances =
             static_cast<std::uint32_t>(sectionFamilies * sectionGrid * sectionGrid * sectionCrossings);
-        if (sectionMode) {
-            std::array<float, 20> palette{};
+        // The 4D surfaces: points per patch, and the palette plus the flow
+        // and pulse waves in the same buffer.
+        const auto& surface4 = state_.fourSurface;
+        const bool fourSurfaceMode = braid.geometryMode == 22;
+        const int surfacePatches = fourSurfacePatches(surface4.surface, surface4.power);
+        const FourSurfaceGrid surfaceGrid =
+            fourSurfaceGrid(surface4.surface, surface4.power, surface4.reach, surface4.pointBudget);
+        const FourSurfaceGrid surfaceSkin = fourSurfaceSkinGrid(surface4.surface);
+        if (sectionMode || fourSurfaceMode) {
+            std::array<float, 24> palette{};
             for (std::size_t i = 0; i < 5; ++i) {
                 const auto& color = state_.palette.colors[i % state_.palette.colors.size()];
                 std::copy(color.begin(), color.end(), palette.begin() + static_cast<std::ptrdiff_t>(4 * i));
             }
+            palette[20] = surface4.flow;
+            palette[21] = static_cast<float>(surface4.pulseWaves);
             polytope_.write(palette.data(), sizeof(palette));
             // The figure's own edges are gone: rebuild them on return.
             polytopeKey_ = {-1, -1, -1};
@@ -698,6 +713,41 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 3.0F,
                 0.0F,
                 slice.zoom,
+            };
+        } else if (fourSurfaceMode) {
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                surface4.size,
+                static_cast<float>(surface4.surface),
+                static_cast<float>(surface4.power),
+                surface4.reach,
+                static_cast<float>(surfaceGrid.columns),
+                static_cast<float>(surfaceGrid.rows),
+                surface4.pointSize,
+                static_cast<float>(surface4.colorMode),
+                surface4.tilt,
+                surface4.glow,
+                surface4.brightness,
+                surface4.turnXW,
+                surface4.nearColor[0],
+                surface4.nearColor[1],
+                surface4.nearColor[2],
+                22.0F,
+                surface4.farColor[0],
+                surface4.farColor[1],
+                surface4.farColor[2],
+                surface4.spin,
+                surface4.turnYW,
+                surface4.turnZW,
+                surface4.viewAngle,
+                surface4.pulseRate,
+                loopCycles_,
+                surface4.cameraDistance,
+                surface4.pulse,
+                surface4.zoom,
             };
         } else if (braid.geometryMode == 21) {
             const auto& julia = state_.julia;
@@ -1290,6 +1340,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             : braid.geometryMode == 17 ? state_.hopf.tori * state_.hopf.fibers
             : braid.geometryMode == 18 ? 32
             : braid.geometryMode == 19 ? polytopeEdgeCount_
+            : fourSurfaceMode          ? surfacePatches
             : braid.geometryMode == 11 ? tentacle.tentacles + 1
             : braid.geometryMode == 15 ? arched.arches + 1
             : braid.geometryMode == 8  ? state_.vortex.strands
@@ -1304,6 +1355,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             // cells than the default grid.
             vkCmdDraw(commands,
                       braid.geometryMode == 19 ? static_cast<std::uint32_t>(polytopeAlong) * 12U * 6U
+                      : fourSurfaceMode
+                          ? static_cast<std::uint32_t>(surfaceSkin.columns * surfaceSkin.rows * 6)
                       : braid.geometryMode == 17 || braid.geometryMode == 18 ? 240U * 24U * 6U
                                                                              : 720U * 64U * 6U,
                       objectCount, 0, 0);
@@ -1400,6 +1453,11 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             }
         } else if (sectionMode) {
             vkCmdDraw(commands, 6, sectionInstances, 0, 0);
+        } else if (fourSurfaceMode) {
+            vkCmdDraw(commands, 6,
+                      static_cast<std::uint32_t>(surfacePatches * surfaceGrid.columns *
+                                                 surfaceGrid.rows),
+                      0, 0);
         } else if (braid.geometryMode >= 17 && braid.geometryMode <= 19) {
             const auto drawFourD = [&] {
                 if (braid.geometryMode == 19) {

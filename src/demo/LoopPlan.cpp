@@ -54,6 +54,9 @@ std::string_view loopDriverLabel(const int geometryMode, const LoopDriver driver
         if (geometryMode == 21) {
             return "Julia loops";
         }
+        if (geometryMode == 22) {
+            return "Surface turns";
+        }
         if (geometryMode == 18 || geometryMode == 19) {
             return "Tesseract turns";
         }
