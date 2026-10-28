@@ -1,0 +1,61 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "braid_common.glsl"
+#include "sections4d.glsl"
+
+// One invocation per ray and crossing (see sections4d.glsl): where the ray
+// meets the surface, its normal, and whether that point is shown.
+layout(local_size_x = 64) in;
+
+// Two vec4 per instance: (point in the figure's frame, colour tag), (normal,
+// flags: 1 found and owned by this ray family, 2 hidden from the camera).
+layout(set = 0, binding = 3, std430) writeonly buffer SectionHits {
+    vec4 sectionHits[];
+};
+
+void main() {
+    int grid = max(int(pc.points.x + 0.5), 1), crossings = max(int(pc.points.y + 0.5), 1);
+    int families = int(pc.loop.y + 0.5);
+    int perFamily = grid * grid * crossings;
+    int instance = int(gl_GlobalInvocationID.x);
+    if (instance >= families * perFamily) return;
+    int family = instance / perFamily;
+    int rest = instance % perFamily;
+    int crossing = rest % crossings;
+    int cell = rest / crossings;
+    int axis = family % 3;
+    float sense = family < 3 ? 1.0 : -1.0;
+    float id = float(instance / crossings);
+    vec2 jitter = vec2(hashScalar(id + 0.37), hashScalar(id + 9.1)) - 0.5;
+    float bound = sectionBound();
+    vec2 across = ((vec2(cell % grid, cell / grid) + 0.5 + 0.9 * jitter) / float(grid) * 2.0 - 1.0)
+                * bound;
+    vec3 direction = vec3(0.0);
+    direction[axis] = sense;
+    vec3 origin = vec3(0.0);
+    origin[axis] = -sense * bound;
+    origin[(axis + 1) % 3] = across.x;
+    origin[(axis + 2) % 3] = across.y;
+    vec3 hit = vec3(0.0);
+    float flags = 0.0;
+    vec3 normal = vec3(0.0, 0.0, 1.0);
+    float tag = 0.0;
+    if (sectionCrossing(origin, direction, crossing, hit)) {
+        normal = sectionNormal(hit);
+        // Each patch belongs to the family whose axis is nearest its normal;
+        // with six families, also the one coming from the side it faces.
+        vec3 weight = abs(normal);
+        int dominant = weight.x > weight.y ? (weight.x > weight.z ? 0 : 2) : (weight.y > weight.z ? 1 : 2);
+        if (dominant == axis && (families < 6 || normal[axis] * sense < 0.0)) {
+            flags = 1.0;
+            sectionField(hit, tag);
+            // The camera direction in the figure's frame.
+            vec3 toCamera = sectionSpin(fromView(vec3(0.0, 0.0, 1.0)), -1.0);
+            if (dot(normal, toCamera) > -0.02 && sectionHidden(hit, normal, toCamera)) {
+                flags = 3.0;
+            }
+        }
+    }
+    sectionHits[2 * instance] = vec4(hit, tag);
+    sectionHits[2 * instance + 1] = vec4(normal, flags);
+}

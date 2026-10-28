@@ -244,6 +244,23 @@ other knots and links (**Colour by** parts shows the link's loops). All three 4D
 also have a **Trail**: fading copies at earlier moments paint the paths the projected
 4D motion takes.
 
+**Hyperbolic cubes {4,3,5}** is a figure of the same mode but not of 4D: the honeycomb
+of hyperbolic space where five cubes meet round every edge, drawn in the Poincare ball.
+Its edges are geodesics (circle arcs), the cells shrink without end towards the rim,
+and the whole honeycomb flows along one axis; one loop slides it by a pair of cubes,
+a symmetry of the honeycomb, so the flow never ends and loops seamlessly.
+
+**4D cross-sections** cuts solid 4D bodies with our 3D space: the 5-cell, tesseract,
+16-cell and 24-cell, the duocylinder, and the rounded tiger, spheritorus and ditorus.
+As the cutting hyperplane sweeps and the body turns through it, the section is a solid
+that keeps changing shape: a cube becomes a truncated cube and an octahedron, a torus
+splits in two. **Quaternion Julia** shows a 3D slice of the Julia set of z -> z^2 + c
+(or z^3) on quaternions while c circles a small loop, so the fractal swells, splits
+and heals. Both are surfaces, found by a compute pass that marches rays parallel to
+the figure's axes through the field, keeps every crossing, and marches once more
+towards the camera to hide what is covered; the points stay on the figure as it
+spins.
+
 **Effects** is a separate window whose settings apply to the points of every geometry.
 **Drift** moves neighbouring points together in a slow flow and **Jitter** makes each
 tremble on its own; both slide points along the surface or away from it. **Shed

@@ -23,6 +23,8 @@ public:
 
 private:
     static constexpr VkFormat targetFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    // Rays times crossings the 4D sections may use.
+    static constexpr VkDeviceSize sectionInstanceLimit = 2'000'000;
 
     // Mirrors the PointEffects uniform block of the point shader (std140).
     struct EffectsBlock {
@@ -44,6 +46,10 @@ private:
     UniquePipeline pipeline_;
     UniquePipeline surfacePipeline_;
     UniquePipeline tubePipeline_; // the skin with colour, for coloured polytope tubes
+    // Ray marching of the 4D sections and the Julia set, once per point.
+    UniquePipelineLayout sectionLayout_;
+    UniquePipeline sectionPipeline_;
+    BufferResource sections_;
     ImageResource target_;
     ImageResource depth_;
     BufferResource effects_;

@@ -100,7 +100,8 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                        "Ridged torus",  "Ridged braid",    "Tentacle sphere",
                                        "Bumpy torus",   "Torus chain",     "Sphere eversion",
                                        "Arched sphere", "Nested cubes",    "Hopf fibration",
-                                       "Tesseract",     "4D polytopes"};
+                                       "Tesseract",     "4D polytopes",    "4D cross-sections",
+                                       "Quaternion Julia"};
     const auto geometryCount = static_cast<int>(geometryNames.size());
     braid.geometryMode = std::clamp(braid.geometryMode, 0, geometryCount - 1);
     if (ImGui::BeginCombo("Geometry",
@@ -116,7 +117,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         };
         group("Braids", {0, 1, 2, 3, 10});
         group("Spheres", {4, 16, 11, 15});
-        group("Four dimensions", {18, 19, 17});
+        group("Four dimensions", {18, 19, 17, 20, 21});
         group("Eversion", {5, 14, 6, 7, 8, 9, 12, 13});
         ImGui::EndCombo();
     }
@@ -207,7 +208,8 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                         "Duoprism",           "Tesseract + 16-cell",
                                         "Three 16-cells",     "Tesseract in tesseract",
                                         "24-cell + dual",     "Torus knot",
-                                        "Quasicrystal (6D)",  "Algebraic knot"};
+                                        "Quasicrystal (6D)",  "Algebraic knot",
+                                        "Hyperbolic cubes {4,3,5}"};
         static_assert(shapeNames.size() == polytope4DCount);
         polytope.shape = std::clamp(polytope.shape, 0, polytope4DCount - 1);
         ImGui::Combo("Figure", &polytope.shape, shapeNames.data(), polytope4DCount);
@@ -238,6 +240,13 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             }
             ImGui::SliderFloat("Phason speed", &polytope.phasonSpeed, -3.0F, 3.0F, "%.2f");
             ImGui::SliderFloat("Flip softness", &polytope.crystalSoftness, 0.02F, 0.5F, "%.2f");
+        } else if (polytope.shape == static_cast<int>(Polytope4D::HyperbolicCubes)) {
+            ImGui::SliderFloat("Flow", &polytope.hyperbolicFlow, -3.0F, 3.0F, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Cubes, five round every edge, in the Poincare ball; the "
+                                  "honeycomb slides through it one cube pair per loop. The 4D "
+                                  "turns, bend, coils and noise do not apply.");
+            }
         } else if (polytope.shape == static_cast<int>(Polytope4D::AlgebraicKnot)) {
             ImGui::SliderInt("Power of z1 (p)", &polytope.knotP, 1, 7);
             ImGui::SliderInt("Roots of g", &polytope.knotRoots, 1, 8);
@@ -355,6 +364,98 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         }
         if (ImGui::Button("Reset palette")) {
             state_.palette.colors = StrandPalette{}.colors;
+        }
+    } else if (braid.geometryMode == 20) {
+        auto& slice = state_.slice;
+        constexpr std::array bodyNames{"5-cell",      "Tesseract", "16-cell",     "24-cell",
+                                       "Duocylinder", "Tiger",     "Spheritorus", "Ditorus"};
+        slice.body = std::clamp(slice.body, 0, static_cast<int>(bodyNames.size()) - 1);
+        ImGui::Combo("Body", &slice.body, bodyNames.data(), static_cast<int>(bodyNames.size()));
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("A solid 4D body; we see where our 3D space cuts it.");
+        }
+        constexpr std::array sliceColors{"Cells", "Depth in 4D", "Cells shaded by depth"};
+        ImGui::Combo("Colour by", &slice.colorMode, sliceColors.data(),
+                     static_cast<int>(sliceColors.size()));
+        if (slice.body >= 5) {
+            ImGui::SliderFloat("Thickness", &slice.thickness, 0.06F, 0.4F, "%.2f");
+        }
+        ImGui::SeparatorText("Slice");
+        ImGui::SliderFloat("Slice sweep", &slice.sliceSweep, 0.0F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("How far the cutting hyperplane swings through the body.");
+        }
+        ImGui::SliderFloat("Sweep rate", &slice.sliceRate, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Slice offset", &slice.sliceOffset, -1.0F, 1.0F, "%.2f");
+        ImGui::SeparatorText("Motion");
+        ImGui::Checkbox("Pause", &slice.paused);
+        ImGui::SliderFloat("Speed", &slice.animationSpeed, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("4D turn (XW)", &slice.turnXW, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("4D turn (YW)", &slice.turnYW, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("4D turn (ZW)", &slice.turnZW, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Spin", &slice.spin, -2.0F, 2.0F, "%.2f");
+        ImGui::SeparatorText("Points");
+        ImGui::SliderInt("Rays per side", &slice.grid, 40, 400);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Point density: rays along each axis of the body find the surface.");
+        }
+        ImGui::SliderInt("Crossings per ray", &slice.crossings, 1, 6);
+        ImGui::SliderFloat("Point radius (700px)", &slice.pointSize, 0.4F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &slice.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &slice.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Size", &slice.size, 0.3F, 1.5F, "%.2f");
+        ImGui::SliderAngle("Tilt", &slice.tilt, -90.0F, 90.0F);
+        ImGui::SliderFloat("Zoom", &slice.zoom, 0.25F, 4.0F, "%.2f", ImGuiSliderFlags_Logarithmic);
+        ImGui::ColorEdit3("Near color", slice.nearColor.data());
+        ImGui::ColorEdit3("Far color", slice.farColor.data());
+        if (ImGui::Button("Reset body")) {
+            slice = SliceSettings{};
+        }
+        ImGui::SeparatorText("Cell palette");
+        for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::ColorEdit3("##Cell color", state_.palette.colors[i].data());
+            ImGui::PopID();
+        }
+    } else if (braid.geometryMode == 21) {
+        auto& julia = state_.julia;
+        ImGui::SliderInt("Power", &julia.power, 2, 3);
+        ImGui::SliderFloat4("c", julia.c.data(), -1.0F, 1.0F, "%.3f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("z -> z^power + c on quaternions; small changes reshape the set.");
+        }
+        ImGui::SliderFloat("c orbit", &julia.orbit, 0.0F, 0.3F, "%.3f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("c circles round this loop: the fractal swells, splits and heals.");
+        }
+        ImGui::SliderFloat("Orbit rate", &julia.orbitRate, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Slice (w)", &julia.sliceW, -1.0F, 1.0F, "%.3f");
+        constexpr std::array juliaColors{"Palette bands", "Near to far"};
+        ImGui::Combo("Colour by", &julia.colorMode, juliaColors.data(),
+                     static_cast<int>(juliaColors.size()));
+        ImGui::SeparatorText("Motion");
+        ImGui::Checkbox("Pause", &julia.paused);
+        ImGui::SliderFloat("Speed", &julia.animationSpeed, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("4D turn (XW)", &julia.turnXW, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Spin", &julia.spin, -2.0F, 2.0F, "%.2f");
+        ImGui::SeparatorText("Points");
+        ImGui::SliderInt("Rays per side", &julia.grid, 40, 400);
+        ImGui::SliderFloat("Point radius (700px)", &julia.pointSize, 0.4F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &julia.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &julia.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Size", &julia.size, 0.3F, 1.5F, "%.2f");
+        ImGui::SliderAngle("Tilt", &julia.tilt, -90.0F, 90.0F);
+        ImGui::SliderFloat("Zoom", &julia.zoom, 0.25F, 4.0F, "%.2f", ImGuiSliderFlags_Logarithmic);
+        ImGui::ColorEdit3("Near color", julia.nearColor.data());
+        ImGui::ColorEdit3("Far color", julia.farColor.data());
+        if (ImGui::Button("Reset fractal")) {
+            julia = JuliaSettings{};
+        }
+        ImGui::SeparatorText("Band palette");
+        for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::ColorEdit3("##Band color", state_.palette.colors[i].data());
+            ImGui::PopID();
         }
     } else if (braid.geometryMode == 18) {
         auto& tesseract = state_.tesseract;

@@ -88,6 +88,20 @@ bool polytopeMode() {
     return pc.style.w > 18.5 && pc.style.w < 19.5;
 }
 
+// 3D cross-sections of 4D bodies and quaternion Julia slices (sections4d.glsl).
+bool sliceMode() {
+    return pc.style.w > 19.5 && pc.style.w < 20.5;
+}
+
+bool juliaMode() {
+    return pc.style.w > 20.5 && pc.style.w < 21.5;
+}
+
+// Both fit a ball of 1.2 sizes; loop.w zooms in.
+float sectionSpan() {
+    return pc.shape.x * 1.2 * 1.25 / max(pc.loop.w, 0.05);
+}
+
 // Defined in polytope.glsl, which only the vertex shaders include.
 float polytopeSpan();
 
@@ -1395,6 +1409,9 @@ vec4 projectView(vec3 p) {
     }
     if (polytopeMode()) {
         span = polytopeSpan();
+    }
+    if (sliceMode() || juliaMode()) {
+        span = sectionSpan();
     }
     vec2 scale = min(pc.view.x, pc.view.y) / pc.view.xy;
     vec4 clip = vec4(p.xy * vec2(1.0, -1.0) * scale / span, (4.0 - p.z) / 8.0, 1.0);

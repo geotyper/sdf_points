@@ -2,6 +2,15 @@
 #extension GL_GOOGLE_include_directive : require
 #include "braid_common.glsl"
 #include "polytope.glsl"
+#include "sections4d.glsl"
+
+layout(set = 0, binding = 3, std430) readonly buffer SectionHits {
+    vec4 sectionHits[];
+};
+
+vec3 sectionPalette(float index) {
+    return polytopeData[int(mod(index, 5.0))].rgb;
+}
 
 layout(location = 0) out vec2 disc;
 layout(location = 1) flat out vec3 pointColor;
@@ -158,6 +167,54 @@ void main() {
         return;
     }
 
+    if (sliceMode() || juliaMode()) {
+        // sections.comp found the point; one instance per ray and crossing.
+        vec4 found = sectionHits[2 * gl_InstanceIndex];
+        vec4 normalFlags = sectionHits[2 * gl_InstanceIndex + 1];
+        vec3 hit = found.xyz, normal = normalFlags.xyz;
+        float tag = found.w;
+        int flags = int(normalFlags.w + 0.5);
+        vec3 toCamera = sectionSpin(fromView(vec3(0.0, 0.0, 1.0)), -1.0);
+        bool shown = (flags & 1) != 0 && dot(normal, toCamera) > -0.02
+                  && (fx.view.x > 0.5 || (flags & 2) == 0);
+        if (!shown) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            pointColor = vec3(0.0);
+            pointFacing = 0.0;
+            return;
+        }
+        vec3 position = sectionSpin(hit * sectionScale(), 1.0);
+        vec3 viewNormal = toView(sectionSpin(normal, 1.0));
+        vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
+        float diffuse = max(dot(viewNormal, light), 0.0);
+        float illumination = 0.12 + 0.88 * pow(diffuse, 0.8);
+        float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
+                           * mix(0.36, 1.0, illumination);
+        radiusPixels = max(radiusPixels, 0.30);
+        // Colour: 0 cells (palette) or orbit bands, 1 by depth in 4D or orbit
+        // trap, 2 cells shaded by depth in 4D.
+        int colorMode = int(pc.points.w + 0.5);
+        vec3 tint;
+        if (juliaMode()) {
+            float trap = clamp(tag, 0.0, 1.5) / 1.5;
+            tint = colorMode == 0 ? sectionPalette(floor(trap * 7.0))
+                                  : mix(pc.style.rgb, pc.wave.rgb, smoothstep(0.05, 0.9, trap));
+        } else {
+            float depth = smoothstep(-0.8, 0.8, sectionTurn(vec4(hit, sliceW())).w);
+            tint = colorMode == 1 ? mix(pc.wave.rgb, pc.style.rgb, depth)
+                 : colorMode == 2 ? sectionPalette(tag) * mix(0.35, 1.25, depth)
+                                  : sectionPalette(tag);
+        }
+        pointColor = tint * illumination * pc.look.z;
+        pointFacing = smoothstep(-0.02, 0.03, viewNormal.z);
+
+        vec4 clip = effectClip(position, viewNormal, radiusPixels);
+        clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
+        gl_Position = clip;
+        disc *= (radiusPixels + 0.65) / radiusPixels;
+        return;
+    }
+
     if (polytopeMode()) {
         int along = max(int(pc.points.x + 0.5), 1), around = max(int(pc.points.y + 0.5), 1);
         int edge = gl_InstanceIndex / (along * around);
@@ -184,7 +241,7 @@ void main() {
         float diffuse = max(dot(viewNormal, light), 0.0);
         float illumination = 0.10 + 0.90 * pow(diffuse, 0.8);
         float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
-                           * mix(0.36, 1.0, illumination) * clamp(sqrt(magnification), 0.5, 2.0);
+                           * mix(0.36, 1.0, illumination) * clamp(sqrt(magnification), polytopeHyperbolic() ? 0.12 : 0.5, 2.0);
 
         float glow;
         vec3 tint = polytopeTint(edge, s, w, glow);

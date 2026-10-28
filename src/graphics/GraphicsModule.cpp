@@ -4,6 +4,7 @@
 #include "vkexp/demo/AlgebraicKnot.hpp"
 #include "vkexp/demo/ArchLattice.hpp"
 #include "vkexp/demo/DemoState.hpp"
+#include "vkexp/demo/HyperbolicHoneycomb.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/PointLattice.hpp"
@@ -50,6 +51,9 @@ void GraphicsModule::onAttach(AppContext& context) {
                                      VK_SHADER_STAGE_VERTEX_BIT, nullptr},
         VkDescriptorSetLayoutBinding{2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
                                      VK_SHADER_STAGE_VERTEX_BIT, nullptr},
+        VkDescriptorSetLayoutBinding{3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+                                     VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT,
+                                     nullptr},
     };
     VkDescriptorSetLayoutCreateInfo setInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     setInfo.bindingCount = static_cast<std::uint32_t>(setBindings.size());
@@ -61,7 +65,7 @@ void GraphicsModule::onAttach(AppContext& context) {
     const std::array poolSizes{
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2},
     };
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     poolInfo.maxSets = 1;
@@ -104,7 +108,15 @@ void GraphicsModule::onAttach(AppContext& context) {
     polytopeWrite.dstBinding = 2;
     polytopeWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     polytopeWrite.pBufferInfo = &polytopeInfo;
-    const std::array bufferWrites{effectsWrite, polytopeWrite};
+    // Two vec4 for every ray and crossing of the 4D sections.
+    constexpr VkDeviceSize sectionBytes = sectionInstanceLimit * 8U * sizeof(float);
+    sections_.create(context.vulkan.physicalDevice(), device,
+                     BufferResourceConfig{sectionBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT});
+    const VkDescriptorBufferInfo sectionInfo{sections_.buffer(), 0, sectionBytes};
+    VkWriteDescriptorSet sectionWrite = polytopeWrite;
+    sectionWrite.dstBinding = 3;
+    sectionWrite.pBufferInfo = &sectionInfo;
+    const std::array bufferWrites{effectsWrite, polytopeWrite, sectionWrite};
     vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(bufferWrites.size()),
                            bufferWrites.data(), 0, nullptr);
 
@@ -210,6 +222,23 @@ void GraphicsModule::onAttach(AppContext& context) {
                                   tubePipeline_.put(device)) != VK_SUCCESS) {
         throw std::runtime_error("Unable to create coloured tube pipeline");
     }
+    constexpr VkPushConstantRange sectionPush{VK_SHADER_STAGE_COMPUTE_BIT, 0, 32U * sizeof(float)};
+    VkPipelineLayoutCreateInfo sectionLayoutInfo = layoutInfo;
+    sectionLayoutInfo.pPushConstantRanges = &sectionPush;
+    if (vkCreatePipelineLayout(device, &sectionLayoutInfo, nullptr, sectionLayout_.put(device)) !=
+        VK_SUCCESS) {
+        throw std::runtime_error("Unable to create section pipeline layout");
+    }
+    const auto sectionShader = loadShaderModule(device, VKEXP_SHADER_DIR "/sections.comp.spv");
+    VkComputePipelineCreateInfo sectionInfoCreate{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    sectionInfoCreate.stage = VkPipelineShaderStageCreateInfo{
+        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT,
+        sectionShader.get(), "main", nullptr};
+    sectionInfoCreate.layout = sectionLayout_.get();
+    if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &sectionInfoCreate, nullptr,
+                                 sectionPipeline_.put(device)) != VK_SUCCESS) {
+        throw std::runtime_error("Unable to create section pipeline");
+    }
     createRenderTarget(context, state_.viewport.extent);
 }
 
@@ -285,6 +314,14 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         } else if (state_.braid.geometryMode == 16) {
             if (!state_.nestedCubes.paused) {
                 nestedSphereTime_ += frame.deltaSeconds * state_.nestedCubes.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 20) {
+            if (!state_.slice.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.slice.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 21) {
+            if (!state_.julia.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.julia.animationSpeed;
             }
         } else if (state_.braid.geometryMode == 19) {
             if (!state_.polytope.paused) {
@@ -513,6 +550,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                     }
                     edges = algebraicKnotEdges(knot, polytopeEdgeLimit);
                     for (auto& edge : edges) edge.direction = edge.part;
+                } else if (polytope.shape == static_cast<int>(Polytope4D::HyperbolicCubes)) {
+                    edges = honeycombEdges(polytopeEdgeLimit);
                 } else {
                     edges = polytopeEdges(static_cast<Polytope4D>(polytope.shape),
                                           polytope.duoprismP, polytope.duoprismQ);
@@ -543,6 +582,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 std::copy(color.begin(), color.end(),
                           polytopeData_.begin() + static_cast<std::ptrdiff_t>(16U + edge * 12U + 8U));
             }
+            const bool hyperbolic = polytope.shape == static_cast<int>(Polytope4D::HyperbolicCubes);
             const std::array shaping{polytope.edgeBend,
                                      polytope.coil,
                                      polytope.coilTurns,
@@ -554,17 +594,38 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                                      static_cast<float>(polytope.coilWave),
                                      polytope.coilWaveLength,
                                      polytope.coilWaveSpeed,
-                                     0.0F,
+                                     hyperbolic ? static_cast<float>(honeycombPeriod()) : 0.0F,
                                      static_cast<float>(polytope.tubes),
                                      polytope.tubeDarkness,
                                      polytope.zoom,
-                                     0.0F};
+                                     polytope.hyperbolicFlow};
             std::copy(shaping.begin(), shaping.end(), polytopeData_.begin());
             if (polytopeEdgeCount_ > 0) {
                 polytope_.write(polytopeData_.data(), polytopeData_.size() * sizeof(float));
             }
             polytopeAlong = polytopePointsAlong(polytope.pointBudget, polytopeEdgeCount_,
                                                 polytope.pointsAround);
+        }
+        // The 4D sections: rays per side, held within the hit buffer, and the
+        // palette in the polytope buffer's first five vec4.
+        const bool sectionMode = braid.geometryMode == 20 || braid.geometryMode == 21;
+        const int sectionFamilies = braid.geometryMode == 21 ? 6 : 3;
+        const int sectionCrossings = braid.geometryMode == 21 ? 1 : std::clamp(state_.slice.crossings, 1, 6);
+        const int sectionGrid = std::min(
+            std::clamp(braid.geometryMode == 21 ? state_.julia.grid : state_.slice.grid, 16, 400),
+            static_cast<int>(std::sqrt(static_cast<double>(sectionInstanceLimit) /
+                                       (sectionFamilies * sectionCrossings))));
+        const auto sectionInstances =
+            static_cast<std::uint32_t>(sectionFamilies * sectionGrid * sectionGrid * sectionCrossings);
+        if (sectionMode) {
+            std::array<float, 20> palette{};
+            for (std::size_t i = 0; i < 5; ++i) {
+                const auto& color = state_.palette.colors[i % state_.palette.colors.size()];
+                std::copy(color.begin(), color.end(), palette.begin() + static_cast<std::ptrdiff_t>(4 * i));
+            }
+            polytope_.write(palette.data(), sizeof(palette));
+            // The figure's own edges are gone: rebuild them on return.
+            polytopeKey_ = {-1, -1, -1};
         }
         std::array<float, 32> pushConstants{};
         if (braid.geometryMode == 16) {
@@ -601,6 +662,78 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 cubes.perspective ? cubes.cameraDistance : 0.0F,
                 cubes.sync && !cubes.zoom ? 1.0F + cubes.syncHold : 0.0F,
                 cubes.syncFlash,
+            };
+        } else if (braid.geometryMode == 20) {
+            const auto& slice = state_.slice;
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                slice.size,
+                static_cast<float>(slice.body),
+                slice.sliceSweep,
+                slice.sliceRate,
+                static_cast<float>(sectionGrid),
+                static_cast<float>(slice.crossings),
+                slice.pointSize,
+                static_cast<float>(slice.colorMode),
+                slice.tilt,
+                slice.glow,
+                slice.brightness,
+                slice.turnXW,
+                slice.nearColor[0],
+                slice.nearColor[1],
+                slice.nearColor[2],
+                20.0F,
+                slice.farColor[0],
+                slice.farColor[1],
+                slice.farColor[2],
+                slice.spin,
+                slice.turnYW,
+                slice.turnZW,
+                slice.sliceOffset,
+                slice.thickness,
+                loopCycles_,
+                3.0F,
+                0.0F,
+                slice.zoom,
+            };
+        } else if (braid.geometryMode == 21) {
+            const auto& julia = state_.julia;
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                julia.size,
+                static_cast<float>(julia.power),
+                julia.orbit,
+                julia.orbitRate,
+                static_cast<float>(sectionGrid),
+                1.0F,
+                julia.pointSize,
+                static_cast<float>(julia.colorMode),
+                julia.tilt,
+                julia.glow,
+                julia.brightness,
+                julia.turnXW,
+                julia.nearColor[0],
+                julia.nearColor[1],
+                julia.nearColor[2],
+                21.0F,
+                julia.farColor[0],
+                julia.farColor[1],
+                julia.farColor[2],
+                julia.spin,
+                julia.c[0],
+                julia.c[1],
+                julia.c[2],
+                julia.c[3],
+                loopCycles_,
+                6.0F,
+                julia.sliceW,
+                julia.zoom,
             };
         } else if (braid.geometryMode == 19) {
             pushConstants = {
@@ -1112,6 +1245,33 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 std::copy(ridges.begin(), ridges.end(), pushConstants.begin() + 29);
             }
         }
+        if (sectionMode) {
+            // March the rays outside the rendering scope, after the last frame's
+            // points have read the hits, and before this frame's do.
+            vkCmdEndRendering(commands);
+            VkMemoryBarrier2 hitsFree{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+            hitsFree.srcStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+            hitsFree.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            VkDependencyInfo hitsDependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            hitsDependency.memoryBarrierCount = 1;
+            hitsDependency.pMemoryBarriers = &hitsFree;
+            vkCmdPipelineBarrier2(commands, &hitsDependency);
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, sectionPipeline_);
+            vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE, sectionLayout_, 0, 1,
+                                    &depthSet_, 0, nullptr);
+            vkCmdPushConstants(commands, sectionLayout_, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                               static_cast<std::uint32_t>(sizeof(pushConstants)),
+                               pushConstants.data());
+            vkCmdDispatch(commands, (sectionInstances + 63U) / 64U, 1, 1);
+            VkMemoryBarrier2 hitsReady{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+            hitsReady.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            hitsReady.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+            hitsReady.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+            hitsReady.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+            hitsDependency.pMemoryBarriers = &hitsReady;
+            vkCmdPipelineBarrier2(commands, &hitsDependency);
+            vkCmdBeginRendering(commands, &rendering);
+        }
         vkCmdPushConstants(commands, pipelineLayout_,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            static_cast<std::uint32_t>(sizeof(pushConstants)), pushConstants.data());
@@ -1139,7 +1299,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 ? 1
                                       : braid.strands);
         // See-through leaves the depth clear, so nothing hides any point.
-        if (!fx.seeThrough) {
+        if (!fx.seeThrough && !sectionMode) {
             // A tube of the Hopf fibration or the tesseract needs far fewer
             // cells than the default grid.
             vkCmdDraw(commands,
@@ -1238,6 +1398,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                     static_cast<std::uint32_t>(sizeof(cubeDraw)), cubeDraw.data());
                 vkCmdDraw(commands, 6, cubePointCount, 0, 0);
             }
+        } else if (sectionMode) {
+            vkCmdDraw(commands, 6, sectionInstances, 0, 0);
         } else if (braid.geometryMode >= 17 && braid.geometryMode <= 19) {
             const auto drawFourD = [&] {
                 if (braid.geometryMode == 19) {
@@ -1408,12 +1570,15 @@ void GraphicsModule::onDetach(AppContext&) {
     pipeline_.reset();
     surfacePipeline_.reset();
     tubePipeline_.reset();
+    sectionPipeline_.reset();
     pipelineLayout_.reset();
+    sectionLayout_.reset();
     depthSet_ = VK_NULL_HANDLE;
     depthPool_.reset();
     depthSetLayout_.reset();
     effects_.reset();
     polytope_.reset();
+    sections_.reset();
 }
 
 } // namespace vkexp

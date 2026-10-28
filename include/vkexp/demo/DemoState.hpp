@@ -35,7 +35,7 @@ struct ComputeOutput {
 };
 
 struct BraidSettings {
-    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes, 17: Hopf fibration, 18: tesseract, 19: 4D polytopes
+    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes, 17: Hopf fibration, 18: tesseract, 19: 4D polytopes, 20: 4D cross-sections, 21: quaternion Julia
     bool paused{};
     bool autoRotate{false};
     bool limitTubeOverlap{false};
@@ -220,6 +220,59 @@ struct PolytopeSettings {
     float knotWander{0.30F};
     float knotSpeed{1.0F};
     float knotGain{1.0F};
+    // Hyperbolic honeycomb: cube widths it flows through per loop of time.
+    float hyperbolicFlow{1.0F};
+};
+
+// 3D cross-sections of solid 4D bodies: the hyperplane sweeps and the body
+// turns through it, so the section changes shape (sections4d.glsl).
+struct SliceSettings {
+    bool paused{};
+    int body{5}; // 5-cell, tesseract, 16-cell, 24-cell, duocylinder, tiger, spheritorus, ditorus
+    int colorMode{0}; // 0 cells, 1 depth in 4D, 2 cells shaded by depth
+    float animationSpeed{0.25F};
+    float sliceSweep{0.45F}; // how far the hyperplane swings through the body
+    float sliceRate{1.0F};
+    float sliceOffset{0.0F};
+    float turnXW{1.0F};
+    float turnYW{0.0F};
+    float turnZW{0.0F};
+    float spin{0.15F};
+    float thickness{0.22F}; // tube radius of the rounded bodies
+    float size{0.85F};
+    int grid{220};     // rays across each side
+    int crossings{4};  // surface crossings looked for along each ray
+    float pointSize{1.0F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.35F};
+    float zoom{1.0F};
+    std::array<float, 3> nearColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> farColor{0.14F, 0.58F, 1.00F};
+};
+
+// A 3D slice of the quaternion Julia set of z -> z^power + c, with c circling
+// round a loop so the fractal swells and splits.
+struct JuliaSettings {
+    bool paused{};
+    int power{2};
+    int colorMode{0}; // 0 palette bands, 1 near to far
+    std::array<float, 4> c{-0.291F, -0.399F, 0.339F, 0.437F};
+    float orbit{0.06F}; // radius of c's loop
+    float orbitRate{1.0F};
+    float sliceW{0.0F};
+    float turnXW{0.5F};
+    float spin{0.15F};
+    float animationSpeed{0.20F};
+    float size{0.85F};
+    int grid{200};
+    float pointSize{0.9F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.35F};
+    float zoom{1.0F};
+    std::array<float, 3> nearColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> farColor{0.14F, 0.58F, 1.00F};
 };
 
 // Trail of the 4D figures: fading copies drawn at earlier moments, so the
@@ -507,6 +560,8 @@ struct DemoState {
     TesseractSettings tesseract;
     PolytopeSettings polytope;
     FourDTrailSettings fourDTrail;
+    SliceSettings slice;
+    JuliaSettings julia;
     EversionSettings eversion;
     SleeveSettings sleeve;
     MorphSettings morph;
@@ -540,6 +595,12 @@ struct DemoState {
     } else if (state.braid.geometryMode == 16) {
         inputs.paused = state.nestedCubes.paused;
         inputs.animationSpeed = state.nestedCubes.animationSpeed;
+    } else if (state.braid.geometryMode == 20) {
+        inputs.paused = state.slice.paused;
+        inputs.animationSpeed = state.slice.animationSpeed;
+    } else if (state.braid.geometryMode == 21) {
+        inputs.paused = state.julia.paused;
+        inputs.animationSpeed = state.julia.animationSpeed;
     } else if (state.braid.geometryMode == 19) {
         inputs.paused = state.polytope.paused;
         inputs.animationSpeed = state.polytope.animationSpeed;

@@ -28,15 +28,16 @@ enum class Polytope4D : int {
     TorusKnot,           // (p, q) torus knot on the Clifford torus
     Quasicrystal,        // icosahedral quasicrystal cut from the 6D lattice (Quasicrystal.hpp)
     AlgebraicKnot,       // link of z1^p = g(z2) on the 3-sphere (AlgebraicKnot.hpp)
+    HyperbolicCubes,     // the {4,3,5} honeycomb in the Poincare ball (HyperbolicHoneycomb.hpp)
 };
 
-inline constexpr int polytope4DCount = 14;
+inline constexpr int polytope4DCount = 15;
 
 // Edges the storage buffer holds.
 inline constexpr std::size_t polytopeEdgeLimit = 8192;
 
 // Figures rebuilt every frame on the CPU as they change; polytopeEdges() has
-// no edges for them.
+// no edges for them, nor for the hyperbolic honeycomb.
 [[nodiscard]] inline bool polytopeIsAnimated(const int shape) {
     return shape == static_cast<int>(Polytope4D::Quasicrystal) ||
            shape == static_cast<int>(Polytope4D::AlgebraicKnot);
@@ -343,6 +344,7 @@ inline void classifyDirections(std::vector<Edge4D>& edges) {
         break;
     case Polytope4D::Quasicrystal:
     case Polytope4D::AlgebraicKnot:
+    case Polytope4D::HyperbolicCubes:
         break;
     }
     classifyDirections(edges);

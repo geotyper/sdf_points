@@ -8,6 +8,7 @@
 #include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/demo/AlgebraicKnot.hpp"
+#include "vkexp/demo/HyperbolicHoneycomb.hpp"
 #include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/Quasicrystal.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
@@ -75,7 +76,7 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 19, "Built-in preset count");
+    check(registry.all().size() == 21, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
     check(registry.require("nested-spheres").initialGeometryMode == 4,
@@ -650,6 +651,11 @@ void testTentaclePatch() {
     check(vkexp::loopDriverLabel(18, vkexp::LoopDriver::Flow) == "Tesseract turns",
           "Tesseract loop label");
     check(registry.require("polytopes-4d").initialGeometryMode == 19, "4D polytopes geometry");
+    check(registry.require("sections-4d").initialGeometryMode == 20 &&
+              registry.require("quaternion-julia").initialGeometryMode == 21,
+          "4D sections and Julia geometry");
+    check(vkexp::loopDriverLabel(20, vkexp::LoopDriver::Flow) == "Slice sweeps",
+          "4D sections loop label");
     const vkexp::BumpyTorusSettings chain = vkexp::torusChainDefaults();
     check(chain.tubeRadius <= vkexp::torusChainTubeLimit(chain),
           "Chain links fit through each other by default");
@@ -722,6 +728,22 @@ void testQuasicrystal() {
     check(!moved.empty() && moved.size() != edges.size(), "Phason shift flips vertices");
 }
 
+void testHoneycomb() {
+    using vkexp::honeycomb_detail::minkowski;
+    const auto edges = vkexp::honeycombEdges(2000);
+    check(edges.size() == 2000, "Honeycomb fills its edge budget");
+    bool onHyperboloid = true, equalEdges = true;
+    for (const auto& edge : edges) {
+        onHyperboloid = onHyperboloid && std::abs(minkowski(edge.start, edge.start) + 1.0) < 1e-9;
+        // Every edge of {4,3,5} has cosh(length) = golden ratio squared.
+        equalEdges = equalEdges && std::abs(-minkowski(edge.start, edge.end) - 2.6180339887) < 1e-8;
+    }
+    check(onHyperboloid, "Honeycomb vertices lie on the hyperboloid");
+    check(equalEdges, "Honeycomb edges all have the same length");
+    check(std::abs(vkexp::honeycombPeriod() - 2.0 * std::atanh(0.4858682718)) < 1e-6,
+          "Honeycomb flow period is two face distances");
+}
+
 void testAlgebraicKnot() {
     // z1^2 = z2^3: the trefoil, one loop on the 3-sphere.
     vkexp::AlgebraicKnotShape trefoil;
@@ -770,5 +792,6 @@ int main() {
     testPolytopes();
     testQuasicrystal();
     testAlgebraicKnot();
+    testHoneycomb();
     return failures == 0 ? 0 : 1;
 }

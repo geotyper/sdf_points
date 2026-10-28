@@ -1,8 +1,9 @@
 // 4D polytopes and compounds. The CPU writes three vec4 of shaping first:
 // (edge bend, coil size, coil turns, coil flow rate), (4D noise amount, noise
 // scale, noise rate, 0), (coil wave: 0 steady, 1 along edges, 2 across the
-// figure; wave length, wave rate, 0), (tubes: 0 black, 1 flat, 2 shaded to
-// black at the rim; tube darkness, camera zoom, 0); then the edges, three vec4 each: start, end,
+// figure; wave length, wave rate, hyperbolic flow period), (tubes: 0 black,
+// 1 flat, 2 shaded to black at the rim; tube darkness, camera zoom,
+// hyperbolic flow rate); then the edges, three vec4 each: start, end,
 // (colour, part + 0.999 * how far the edge has faded out). Push constants: shape = size, tube radius, 4D
 // camera distance, XW turn rate; points = samples along an edge, around its
 // tube, pixel radius, edge count; look.w = YZ turn rate; style.rgb = near
@@ -54,9 +55,17 @@ vec4 polytopeTurn(vec4 q, float part) {
     return q;
 }
 
+// A hyperbolic honeycomb: the edges are on the hyperboloid (x, y, z, t) and
+// slide along x by up to one period, a symmetry of the honeycomb.
+bool polytopeHyperbolic() {
+    return polytopeData[2].w > 0.0;
+}
+
 // Perspective magnification from the 4D camera. At distance 1 with bent edges
-// this is the stereographic projection of the 3-sphere.
+// this is the stereographic projection of the 3-sphere. In the Poincare ball
+// it is how much the map shrinks a hyperbolic length at height t = w.
 float polytopeScale(float w) {
+    if (polytopeHyperbolic()) return 2.0 / (1.0 + max(w, 1.0));
     return pc.shape.z / max(pc.shape.z - w, 1e-3);
 }
 
@@ -64,6 +73,7 @@ float polytopeScale(float w) {
 const float POLYTOPE_CUTOFF = 8.0;
 
 float polytopeSpan() {
+    if (polytopeHyperbolic()) return pc.shape.x * 1.08 / max(polytopeData[3].z, 0.05);
     float reach = 0.0;
     for (int i = 0; i <= 32; ++i) {
         float angle = 0.5 * PI * float(i) / 32.0;
@@ -91,6 +101,18 @@ float polytopeCoilWave(vec4 start, vec4 end, float along) {
 vec4 polytopePoint4(int edge, float along) {
     vec4 start = polytopeEdge(edge, 0), end = polytopeEdge(edge, 1);
     float part = polytopePart(edge);
+    if (polytopeHyperbolic()) {
+        // Along the geodesic: the chord pushed back onto the hyperboloid.
+        vec4 q = mix(start, end, along);
+        q /= sqrt(max(q.w * q.w - dot(q.xyz, q.xyz), 1e-9));
+        // Slide along x; a whole period later the honeycomb is back on itself.
+        float s = polytopeData[2].w * timePhase(polytopeData[3].w) / TAU;
+        q = vec4(cosh(s) * q.x - sinh(s) * q.w, q.y, q.z, cosh(s) * q.w - sinh(s) * q.x);
+        // An ordinary turn about the flow's axis.
+        float b = timePhase(pc.look.w);
+        q = vec4(q.x, cos(b) * q.y - sin(b) * q.z, sin(b) * q.y + cos(b) * q.z, q.w);
+        return q;
+    }
     vec4 shaping = polytopeData[0];
     vec4 q = mix(start, end, along);
     // Bend: 0 straight, 1 along the great circle on the part's own 3-sphere,
@@ -129,7 +151,9 @@ vec4 polytopePoint4(int edge, float along) {
 }
 
 vec3 polytopeProject(vec4 q) {
-    vec3 p = pc.shape.x * polytopeScale(q.w) * q.xyz;
+    // Poincare ball: the hyperboloid seen from (0, 0, 0, -1).
+    vec3 p = polytopeHyperbolic() ? pc.shape.x * q.xyz / (1.0 + q.w)
+                                  : pc.shape.x * polytopeScale(q.w) * q.xyz;
     float spin = timePhase(pc.wave.w);
     p.xz = mat2(cos(spin), sin(spin), -sin(spin), cos(spin)) * p.xz;
     return p;
@@ -170,7 +194,8 @@ void polytopeFrame(int edge, float along, out vec3 center, out vec3 normal, out 
 vec3 polytopeTint(int edge, float along, float w, out float glow) {
     int colorMode = int(pc.motion.y + 0.5);
     vec3 own = polytopeEdge(edge, 2).rgb;
-    float depth = smoothstep(-0.9, 0.9, w);
+    // In the Poincare ball, near is the middle and far the rim.
+    float depth = polytopeHyperbolic() ? 1.0 - smoothstep(1.0, 9.0, w) : smoothstep(-0.9, 0.9, w);
     vec3 tint = colorMode == 0 ? mix(pc.wave.rgb, pc.style.rgb, depth)
               : colorMode == 3 ? own * mix(0.30, 1.25, depth)
                                : own;
@@ -188,5 +213,7 @@ vec3 polytopeTint(int edge, float along, float w, out float glow) {
 }
 
 bool polytopeTooClose(float w) {
+    // Hyperbolic edges at the rim shrink to nothing instead.
+    if (polytopeHyperbolic()) return polytopeScale(w) < 0.02;
     return polytopeScale(w) > POLYTOPE_CUTOFF || pc.shape.z - w < 1e-2;
 }
