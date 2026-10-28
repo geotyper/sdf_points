@@ -6,6 +6,7 @@
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/HyperbolicHoneycomb.hpp"
 #include "vkexp/demo/FourSurfaces.hpp"
+#include "vkexp/demo/HigherCubes.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/PointLattice.hpp"
@@ -558,6 +559,11 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                     for (auto& edge : edges) edge.direction = edge.part;
                 } else if (polytope.shape == static_cast<int>(Polytope4D::HyperbolicCubes)) {
                     edges = honeycombEdges(polytopeEdgeLimit);
+                } else if (polytope.shape == static_cast<int>(Polytope4D::Penteract) ||
+                           polytope.shape == static_cast<int>(Polytope4D::Hexeract)) {
+                    edges = higherCubeEdges(
+                        polytope.shape == static_cast<int>(Polytope4D::Penteract) ? 5 : 6,
+                        phase(polytope.higherTurn), polytope.higherDistance);
                 } else {
                     edges = polytopeEdges(static_cast<Polytope4D>(polytope.shape),
                                           polytope.duoprismP, polytope.duoprismQ);

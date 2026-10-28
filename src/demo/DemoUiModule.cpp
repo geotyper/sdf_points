@@ -210,7 +210,8 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                         "Three 16-cells",     "Tesseract in tesseract",
                                         "24-cell + dual",     "Torus knot",
                                         "Quasicrystal (6D)",  "Algebraic knot",
-                                        "Hyperbolic cubes {4,3,5}"};
+                                        "Hyperbolic cubes {4,3,5}", "5-cube (penteract)",
+                                        "6-cube (hexeract)"};
         static_assert(shapeNames.size() == polytope4DCount);
         polytope.shape = std::clamp(polytope.shape, 0, polytope4DCount - 1);
         ImGui::Combo("Figure", &polytope.shape, shapeNames.data(), polytope4DCount);
@@ -248,7 +249,17 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                   "honeycomb slides through it one cube pair per loop. The 4D "
                                   "turns, bend, coils and noise do not apply.");
             }
-        } else if (polytope.shape == static_cast<int>(Polytope4D::AlgebraicKnot)) {
+        } else if (polytope.shape == static_cast<int>(Polytope4D::Penteract) ||
+                   polytope.shape == static_cast<int>(Polytope4D::Hexeract)) {
+            ImGui::SliderFloat("Higher turn", &polytope.higherTurn, -3.0F, 3.0F, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Turns into the 5th (and 6th) dimension, seen through a "
+                                  "perspective per extra dimension: inner cubes come out "
+                                  "through the outer ones. Parts colour the layers along the "
+                                  "extra axes and the edges joining them.");
+            }
+            ImGui::SliderFloat("Higher camera distance", &polytope.higherDistance, 1.5F, 6.0F,
+                               "%.2f");
             ImGui::SliderInt("Power of z1 (p)", &polytope.knotP, 1, 7);
             ImGui::SliderInt("Roots of g", &polytope.knotRoots, 1, 8);
             if (ImGui::IsItemHovered()) {

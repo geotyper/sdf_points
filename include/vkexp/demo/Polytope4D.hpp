@@ -29,9 +29,11 @@ enum class Polytope4D : int {
     Quasicrystal,        // icosahedral quasicrystal cut from the 6D lattice (Quasicrystal.hpp)
     AlgebraicKnot,       // link of z1^p = g(z2) on the 3-sphere (AlgebraicKnot.hpp)
     HyperbolicCubes,     // the {4,3,5} honeycomb in the Poincare ball (HyperbolicHoneycomb.hpp)
+    Penteract,           // the 5-cube, turned in 5D and seen in perspective (HigherCubes.hpp)
+    Hexeract,            // the 6-cube, likewise
 };
 
-inline constexpr int polytope4DCount = 15;
+inline constexpr int polytope4DCount = 17;
 
 // Edges the storage buffer holds.
 // Floats of shaping ahead of the edges in the polytope buffer (polytope.glsl).
@@ -42,7 +44,9 @@ inline constexpr std::size_t polytopeEdgeLimit = 8192;
 // no edges for them, nor for the hyperbolic honeycomb.
 [[nodiscard]] inline bool polytopeIsAnimated(const int shape) {
     return shape == static_cast<int>(Polytope4D::Quasicrystal) ||
-           shape == static_cast<int>(Polytope4D::AlgebraicKnot);
+           shape == static_cast<int>(Polytope4D::AlgebraicKnot) ||
+           shape == static_cast<int>(Polytope4D::Penteract) ||
+           shape == static_cast<int>(Polytope4D::Hexeract);
 }
 
 using Vec4d = std::array<double, 4>;
@@ -347,6 +351,8 @@ inline void classifyDirections(std::vector<Edge4D>& edges) {
     case Polytope4D::Quasicrystal:
     case Polytope4D::AlgebraicKnot:
     case Polytope4D::HyperbolicCubes:
+    case Polytope4D::Penteract:
+    case Polytope4D::Hexeract:
         break;
     }
     classifyDirections(edges);

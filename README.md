@@ -246,6 +246,12 @@ other knots and links (**Colour by** parts shows the link's loops). All three 4D
 also have a **Trail**: fading copies at earlier moments paint the paths the projected
 4D motion takes.
 
+**5-cube** and **6-cube** go one and two dimensions further: the cube turns in planes
+reaching into its extra axes and is brought down to 4D by one perspective per extra
+dimension, then seen through the usual 4D camera, so its inner tesseracts come out
+through the outer ones. **Higher turn** and **Higher camera distance** steer it;
+colouring by parts tells the layers along the extra axes from the edges joining them.
+
 **Hyperbolic cubes {4,3,5}** is a figure of the same mode but not of 4D: the honeycomb
 of hyperbolic space where five cubes meet round every edge, drawn in the Poincare ball.
 Its edges are geodesics (circle arcs), the cells shrink without end towards the rim,

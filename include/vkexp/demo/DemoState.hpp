@@ -225,6 +225,8 @@ struct PolytopeSettings {
     float knotGain{1.0F};
     // Hyperbolic honeycomb: cube widths it flows through per loop of time.
     float hyperbolicFlow{1.0F};
+    float higherTurn{0.5F};     // 5-cube and 6-cube: turns into the extra dimensions
+    float higherDistance{2.5F}; // their camera, out along every extra axis
     float mobius{0.0F}; // Moebius flow: rapidity of the conformal push
     float mobiusRate{1.0F};
 };

@@ -9,6 +9,7 @@
 #include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/demo/AlgebraicKnot.hpp"
+#include "vkexp/demo/HigherCubes.hpp"
 #include "vkexp/demo/HyperbolicHoneycomb.hpp"
 #include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/Quasicrystal.hpp"
@@ -774,6 +775,26 @@ void testAlgebraicKnot() {
     check(hopfParts == 2, "z1^2 = z2^2 is a link of two loops");
 }
 
+void testHigherCubes() {
+    const auto penteract = vkexp::higherCubeEdges(5, 0.7, 2.5);
+    const auto hexeract = vkexp::higherCubeEdges(6, 0.7, 2.5);
+    check(penteract.size() == 80 && hexeract.size() == 192, "5-cube and 6-cube edge counts");
+    int joins = 0;
+    for (const auto& edge : penteract) {
+        joins += edge.part == 2 ? 1 : 0;
+        check((edge.part == 2) == (edge.direction == 4), "5-cube parts: two layers and their joins");
+    }
+    check(joins == 16, "Sixteen edges join the 5-cube's two tesseracts");
+    // Unturned, the layer nearer the 5D camera is the larger.
+    const double half = std::sqrt(0.2);
+    for (const auto& edge : vkexp::higherCubeEdges(5, 0.0, 2.5)) {
+        if (edge.part < 2) {
+            const double expected = half * 2.5 / (2.5 + (edge.part == 1 ? -half : half));
+            check(std::abs(std::abs(edge.start[0]) - expected) < 1e-9, "5-cube layers in perspective");
+        }
+    }
+}
+
 void testFourSurfaces() {
     check(vkexp::fourSurfacePatches({0, 5}) == 25 && vkexp::fourSurfacePatches({3, 5}) == 1,
           "Calabi-Yau has n^2 patches, the others one");
@@ -812,5 +833,6 @@ int main() {
     testAlgebraicKnot();
     testHoneycomb();
     testFourSurfaces();
+    testHigherCubes();
     return failures == 0 ? 0 : 1;
 }
