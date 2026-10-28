@@ -172,6 +172,10 @@ struct PolytopeSettings {
     int coilWave{0}; // 0 steady, 1 waves along every edge, 2 fronts across the figure
     float coilWaveLength{0.5F};
     float coilWaveSpeed{1.0F};
+    // The tubes under the points: 0 black, 1 the point colour a shade darker,
+    // 2 that colour fading to black towards the rim.
+    int tubes{0};
+    float tubeDarkness{0.55F}; // 0 the point colour itself, 1 black
     // 4D noise displacing every point before the projection.
     bool noise{false};
     float noiseAmount{0.08F};
@@ -193,7 +197,7 @@ struct PolytopeSettings {
     float glow{0.18F};
     float brightness{1.20F};
     float tilt{0.35F};
-    int pointBudget{160000};
+    int pointBudget{400000};
     int pointsAround{6};
     std::array<float, 3> nearColor{1.00F, 0.62F, 0.16F};
     std::array<float, 3> farColor{0.14F, 0.58F, 1.00F};

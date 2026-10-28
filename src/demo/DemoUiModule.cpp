@@ -252,6 +252,19 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Noise scale", &polytope.noiseScale, 0.5F, 8.0F, "%.2f");
         ImGui::SliderFloat("Noise speed", &polytope.noiseSpeed, -3.0F, 3.0F, "%.2f");
         ImGui::EndDisabled();
+        ImGui::SeparatorText("Tubes");
+        const char* tubeStyles[] = {"Black", "Point colour", "Point colour to black"};
+        ImGui::Combo("Tube colour", &polytope.tubes, tubeStyles, IM_ARRAYSIZE(tubeStyles));
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Paint the tubes under the points in their colour, flat or "
+                              "fading to black towards the rim.");
+        }
+        ImGui::BeginDisabled(polytope.tubes == 0);
+        ImGui::SliderFloat("Tube darkness", &polytope.tubeDarkness, 0.0F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0 the point colour itself, 1 black.");
+        }
+        ImGui::EndDisabled();
         ImGui::SeparatorText("Motion");
         ImGui::Checkbox("Parts turn against each other", &polytope.counterTurn);
         ImGui::Checkbox("Pause", &polytope.paused);
@@ -266,7 +279,8 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Tube radius", &polytope.tubeRadius, 0.003F, 0.06F, "%.3f");
         ImGui::SliderFloat("Light flow", &polytope.lightFlow, -6.0F, 6.0F, "%.1f");
         ImGui::SliderFloat("Light strength", &polytope.lightStrength, 0.0F, 2.0F, "%.2f");
-        ImGui::SliderInt("Point budget", &polytope.pointBudget, 20000, 400000);
+        ImGui::SliderInt("Point budget", &polytope.pointBudget, 20000, 2000000, "%d",
+                         ImGuiSliderFlags_Logarithmic);
         ImGui::SliderInt("Points around", &polytope.pointsAround, 3, 16);
         ImGui::SliderFloat("Point radius (700px)", &polytope.pointSize, 0.6F, 3.0F, "%.2f");
         ImGui::SliderFloat("Glow", &polytope.glow, 0.0F, 1.5F, "%.2f");

@@ -92,7 +92,7 @@ void GraphicsModule::onAttach(AppContext& context) {
     effectsWrite.pBufferInfo = &effectsInfo;
     // Two vec4 of shaping, then room for the largest figure: the 120-cell's
     // 1200 edges, three vec4 each.
-    constexpr VkDeviceSize polytopeBytes = (12U + 2048U * 12U) * sizeof(float);
+    constexpr VkDeviceSize polytopeBytes = (16U + 2048U * 12U) * sizeof(float);
     polytope_.create(context.vulkan.physicalDevice(), device,
                      BufferResourceConfig{polytopeBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
@@ -201,6 +201,12 @@ void GraphicsModule::onAttach(AppContext& context) {
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
                                   surfacePipeline_.put(device)) != VK_SUCCESS) {
         throw std::runtime_error("Unable to create braid depth pipeline");
+    }
+    blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                     VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+                                  tubePipeline_.put(device)) != VK_SUCCESS) {
+        throw std::runtime_error("Unable to create coloured tube pipeline");
     }
     createRenderTarget(context, state_.viewport.extent);
 }
@@ -471,11 +477,11 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 const auto edges = polytopeEdges(static_cast<Polytope4D>(polytope.shape),
                                                  polytope.duoprismP, polytope.duoprismQ);
                 polytopeEdgeCount_ = static_cast<int>(std::min<std::size_t>(edges.size(), 2048U));
-                polytopeData_.assign(12U + static_cast<std::size_t>(polytopeEdgeCount_) * 12U, 0.0F);
+                polytopeData_.assign(16U + static_cast<std::size_t>(polytopeEdgeCount_) * 12U, 0.0F);
                 polytopeClasses_.resize(static_cast<std::size_t>(polytopeEdgeCount_));
                 for (std::size_t edge = 0; edge < polytopeClasses_.size(); ++edge) {
                     const auto& source = edges[edge];
-                    float* out = polytopeData_.data() + 12U + edge * 12U;
+                    float* out = polytopeData_.data() + 16U + edge * 12U;
                     for (std::size_t i = 0; i < 4; ++i) {
                         out[i] = static_cast<float>(source.start[i]);
                         out[4 + i] = static_cast<float>(source.end[i]);
@@ -491,7 +497,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 const auto group = static_cast<std::size_t>(polytopeClasses_[edge][byDirection ? 1 : 0]);
                 const auto& color = colors[group % colors.size()];
                 std::copy(color.begin(), color.end(),
-                          polytopeData_.begin() + static_cast<std::ptrdiff_t>(12U + edge * 12U + 8U));
+                          polytopeData_.begin() + static_cast<std::ptrdiff_t>(16U + edge * 12U + 8U));
             }
             const std::array shaping{polytope.edgeBend,
                                      polytope.coil,
@@ -504,6 +510,10 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                                      static_cast<float>(polytope.coilWave),
                                      polytope.coilWaveLength,
                                      polytope.coilWaveSpeed,
+                                     0.0F,
+                                     static_cast<float>(polytope.tubes),
+                                     polytope.tubeDarkness,
+                                     0.0F,
                                      0.0F};
             std::copy(shaping.begin(), shaping.end(), polytopeData_.begin());
             if (polytopeEdgeCount_ > 0) {
@@ -1063,7 +1073,9 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                            static_cast<std::uint32_t>(sizeof(pushConstants)), pushConstants.data());
         // Both passes use the same periodic surface and flow phase. The closed
         // depth-only skin hides rear points even in the gaps between sprites.
-        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, surfacePipeline_);
+        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          braid.geometryMode == 19 && state_.polytope.tubes > 0 ? tubePipeline_
+                                                                                 : surfacePipeline_);
         // The polytope's skin reads its edges; the depth image in the same set
         // is not touched by the skin shaders.
         vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
@@ -1325,6 +1337,7 @@ void GraphicsModule::onDetach(AppContext&) {
     destroyRenderTarget();
     pipeline_.reset();
     surfacePipeline_.reset();
+    tubePipeline_.reset();
     pipelineLayout_.reset();
     depthSet_ = VK_NULL_HANDLE;
     depthPool_.reset();

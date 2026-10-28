@@ -43,6 +43,7 @@ private:
     UniquePipelineLayout pipelineLayout_;
     UniquePipeline pipeline_;
     UniquePipeline surfacePipeline_;
+    UniquePipeline tubePipeline_; // the skin with colour, for coloured polytope tubes
     ImageResource target_;
     ImageResource depth_;
     BufferResource effects_;

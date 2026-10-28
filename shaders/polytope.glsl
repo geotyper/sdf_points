@@ -1,7 +1,8 @@
 // 4D polytopes and compounds. The CPU writes three vec4 of shaping first:
 // (edge bend, coil size, coil turns, coil flow rate), (4D noise amount, noise
 // scale, noise rate, 0), (coil wave: 0 steady, 1 along edges, 2 across the
-// figure; wave length, wave rate, 0); then the edges, three vec4 each: start, end,
+// figure; wave length, wave rate, 0), (tubes: 0 black, 1 flat, 2 shaded to
+// black at the rim; tube darkness, 0, 0); then the edges, three vec4 each: start, end,
 // (colour, part). Push constants: shape = size, tube radius, 4D
 // camera distance, XW turn rate; points = samples along an edge, around its
 // tube, pixel radius, edge count; look.w = YZ turn rate; style.rgb = near
@@ -13,7 +14,7 @@ layout(set = 0, binding = 2, std430) readonly buffer PolytopeEdges {
 };
 
 vec4 polytopeEdge(int edge, int slot) {
-    return polytopeData[3 + 3 * edge + slot];
+    return polytopeData[4 + 3 * edge + slot];
 }
 
 // Smooth 4D displacement: crossed sine waves in all four coordinates, drifting
@@ -152,6 +153,29 @@ void polytopeFrame(int edge, float along, out vec3 center, out vec3 normal, out 
     if (dot(side, side) < 1e-6) side = cross(normalize(fixedSide + 0.5 * chord), tangent);
     normal = normalize(side);
     binormal = cross(tangent, normal);
+}
+
+// Point colour before lighting: by 4D depth, part, 4D direction or part shaded
+// by depth (motion.y), lit by the sweeping slice and the running lights.
+// `glow` is how much the slice lights this spot.
+vec3 polytopeTint(int edge, float along, float w, out float glow) {
+    int colorMode = int(pc.motion.y + 0.5);
+    vec3 own = polytopeEdge(edge, 2).rgb;
+    float depth = smoothstep(-0.9, 0.9, w);
+    vec3 tint = colorMode == 0 ? mix(pc.wave.rgb, pc.style.rgb, depth)
+              : colorMode == 3 ? own * mix(0.30, 1.25, depth)
+                               : own;
+    glow = 0.0;
+    // A hyperplane w = const sweeps through the figure and lights up the
+    // 3D cross-section it cuts; the rest falls into shade.
+    if (pc.motion.z > 0.0) {
+        float level = 0.85 * sin(timePhase(1.0));
+        float distance = (w - level) / max(pc.motion.w, 1e-3);
+        glow = exp(-distance * distance);
+        tint = tint * mix(1.0, 0.25 + 1.6 * glow, pc.motion.z) + 0.45 * pc.motion.z * glow;
+    }
+    float pulse = pow(0.5 + 0.5 * cos(TAU * along - timePhase(pc.loop.w)), 10.0);
+    return tint * (1.0 + pc.loop.y * pulse) + 0.3 * pc.loop.y * pulse;
 }
 
 bool polytopeTooClose(float w) {

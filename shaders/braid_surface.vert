@@ -7,6 +7,10 @@ const ivec2 corners[6] = ivec2[](ivec2(0, 0), ivec2(1, 0), ivec2(0, 1),
                                ivec2(0, 1), ivec2(1, 0), ivec2(1, 1));
 
 layout(location = 0) out vec3 sphereLocalDirection;
+// Coloured polytope tubes only: colour and how squarely the skin faces the
+// viewer; every other skin writes depth alone.
+layout(location = 1) out vec3 tubeColor;
+layout(location = 2) out float tubeFacing;
 
 void main() {
     int cell = gl_VertexIndex / 6;
@@ -18,6 +22,8 @@ void main() {
     } else {
         sphereLocalDirection = vec3(0.0, 0.0, 1.0);
     }
+    tubeColor = vec3(0.0);
+    tubeFacing = 1.0;
     if (nestedCubeMode()) {
         // Every instance is one cube: a square grid on each of its six faces.
         // The fragment shader cuts the windows out; spare cells collapse.
@@ -72,9 +78,19 @@ void main() {
         float w;
         polytopeFrame(gl_InstanceIndex, float(corner.x) / float(along), center, normal, binormal, w);
         float angle = TAU * float(corner.y) / float(around);
+        vec3 outward = normal * cos(angle) + binormal * sin(angle);
         // A hair inside the points, so they sit on the skin and not under it.
-        gl_Position = projectPoint(center + 0.97 * pc.shape.y * polytopeScale(w)
-                                   * (normal * cos(angle) + binormal * sin(angle)));
+        gl_Position = projectPoint(center + 0.97 * pc.shape.y * polytopeScale(w) * outward);
+        vec4 tubes = polytopeData[3];
+        if (tubes.x > 0.5) {
+            float glow;
+            float stretch = float(corner.x) / float(along);
+            vec3 viewNormal = toView(outward);
+            float diffuse = max(dot(viewNormal, normalize(vec3(-0.65, 0.8, 1.15))), 0.0);
+            tubeColor = polytopeTint(gl_InstanceIndex, stretch, w, glow) * pc.look.z
+                      * (1.0 - tubes.y) * (tubes.x < 1.5 ? mix(0.6, 1.0, diffuse) : 1.0);
+            tubeFacing = tubes.x < 1.5 ? 1.0 : viewNormal.z;
+        }
         return;
     }
     if (tesseractMode()) {

@@ -184,24 +184,9 @@ void main() {
         float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
                            * mix(0.36, 1.0, illumination) * clamp(sqrt(magnification), 0.5, 2.0);
 
-        // Colour: 0 by 4D depth, 1 by part, 2 by 4D direction, 3 part shaded by depth.
-        int colorMode = int(pc.motion.y + 0.5);
-        vec3 own = polytopeEdge(edge, 2).rgb;
-        float depth = smoothstep(-0.9, 0.9, w);
-        vec3 tint = colorMode == 0 ? mix(pc.wave.rgb, pc.style.rgb, depth)
-                  : colorMode == 3 ? own * mix(0.30, 1.25, depth)
-                                   : own;
-        // A hyperplane w = const sweeps through the figure and lights up the
-        // 3D cross-section it cuts; the rest falls into shade.
-        if (pc.motion.z > 0.0) {
-            float level = 0.85 * sin(timePhase(1.0));
-            float distance = (w - level) / max(pc.motion.w, 1e-3);
-            float glow = exp(-distance * distance);
-            tint = tint * mix(1.0, 0.25 + 1.6 * glow, pc.motion.z) + 0.45 * pc.motion.z * glow;
-            radiusPixels *= 1.0 + 0.6 * pc.motion.z * glow;
-        }
-        float pulse = pow(0.5 + 0.5 * cos(TAU * s - timePhase(pc.loop.w)), 10.0);
-        tint = tint * (1.0 + pc.loop.y * pulse) + 0.3 * pc.loop.y * pulse;
+        float glow;
+        vec3 tint = polytopeTint(edge, s, w, glow);
+        radiusPixels *= 1.0 + 0.6 * pc.motion.z * glow;
         radiusPixels = max(radiusPixels, 0.30);
         pointColor = tint * illumination * pc.look.z;
         pointFacing = smoothstep(-0.015, 0.025, viewNormal.z);
