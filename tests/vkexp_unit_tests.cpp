@@ -7,7 +7,9 @@
 #include "vkexp/demo/LoopPlan.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/PointLattice.hpp"
+#include "vkexp/demo/AlgebraicKnot.hpp"
 #include "vkexp/demo/Polytope4D.hpp"
+#include "vkexp/demo/Quasicrystal.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/presets/PresetRegistry.hpp"
 #include "vkexp/profiling/CpuProfiler.hpp"
@@ -692,6 +694,58 @@ void testPolytopes() {
     check(vkexp::polytopePointsAlong(160000, 1200, 6) == 22 &&
               vkexp::polytopePointsAlong(160000, 10, 6) == 400,
           "Point budget spreads over the edges");
+    check(vkexp::polytopeEdges(Polytope4D::Quasicrystal).empty() &&
+              vkexp::polytopeIsAnimated(static_cast<int>(Polytope4D::AlgebraicKnot)),
+          "Changing figures are built outside polytopeEdges");
+}
+
+void testQuasicrystal() {
+    const auto edges = vkexp::quasicrystalEdges({});
+    check(edges.size() > 100, "Quasicrystal has a cluster of edges");
+    bool inside = true, unitEdges = true;
+    int axes = 0;
+    for (const auto& edge : edges) {
+        const vkexp::Vec4d a{edge.start[0], edge.start[1], edge.start[2], 0.0};
+        const vkexp::Vec4d b{edge.end[0], edge.end[1], edge.end[2], 0.0};
+        inside = inside && vkexp::polytope_detail::norm(a) <= 1.0 + 1e-9;
+        // Every edge is one lattice step: the same length in parallel space.
+        const double length = std::sqrt(vkexp::polytope_detail::distanceSquared(a, b));
+        unitEdges = unitEdges && std::abs(length - 1.0 / 3.5) < 1e-9;
+        axes |= 1 << edge.direction;
+    }
+    check(inside, "Quasicrystal stays inside the unit ball");
+    check(unitEdges, "Quasicrystal edges are single lattice steps");
+    check(axes == 63, "Quasicrystal edges run along all six icosahedral axes");
+    vkexp::QuasicrystalShape shifted;
+    shifted.shift = {0.4, 0.0, 0.0};
+    const auto moved = vkexp::quasicrystalEdges(shifted);
+    check(!moved.empty() && moved.size() != edges.size(), "Phason shift flips vertices");
+}
+
+void testAlgebraicKnot() {
+    // z1^2 = z2^3: the trefoil, one loop on the 3-sphere.
+    vkexp::AlgebraicKnotShape trefoil;
+    trefoil.p = 2;
+    trefoil.roots.assign(3, {0.0, 0.0});
+    const auto edges = vkexp::algebraicKnotEdges(trefoil);
+    check(edges.size() > 50, "Trefoil has edges");
+    bool onSphere = true;
+    int parts = 0;
+    for (const auto& edge : edges) {
+        onSphere = onSphere && std::abs(vkexp::polytope_detail::norm(edge.start) - 1.0) < 1e-6;
+        parts = std::max(parts, edge.part + 1);
+    }
+    check(onSphere, "Algebraic knot lies on the unit 3-sphere");
+    check(parts == 1, "z1^2 = z2^3 is a single knot");
+    // z1^2 = z2^2: the Hopf link, two loops.
+    vkexp::AlgebraicKnotShape hopf;
+    hopf.p = 2;
+    hopf.roots.assign(2, {0.0, 0.0});
+    int hopfParts = 0;
+    for (const auto& edge : vkexp::algebraicKnotEdges(hopf)) {
+        hopfParts = std::max(hopfParts, edge.part + 1);
+    }
+    check(hopfParts == 2, "z1^2 = z2^2 is a link of two loops");
 }
 
 } // namespace
@@ -714,5 +768,7 @@ int main() {
     testClosedLattice();
     testTentaclePatch();
     testPolytopes();
+    testQuasicrystal();
+    testAlgebraicKnot();
     return failures == 0 ? 0 : 1;
 }

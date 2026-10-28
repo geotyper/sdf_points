@@ -168,7 +168,8 @@ void main() {
         vec3 center, normal, binormal;
         float w;
         polytopeFrame(edge, s, center, normal, binormal, w);
-        if (polytopeTooClose(w)) {
+        float presence = polytopePresence(edge);
+        if (polytopeTooClose(w) || presence < 0.02) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
             pointColor = vec3(0.0);
             pointFacing = 0.0;
@@ -176,7 +177,8 @@ void main() {
         }
         float magnification = polytopeScale(w);
         vec3 outward = normal * cos(v) + binormal * sin(v);
-        vec3 position = center + pc.shape.y * magnification * outward;
+        // A fading edge thins down to its centre line and dims.
+        vec3 position = center + pc.shape.y * magnification * presence * outward;
         vec3 viewNormal = toView(outward);
         vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
         float diffuse = max(dot(viewNormal, light), 0.0);
@@ -187,8 +189,8 @@ void main() {
         float glow;
         vec3 tint = polytopeTint(edge, s, w, glow);
         radiusPixels *= 1.0 + 0.6 * pc.motion.z * glow;
-        radiusPixels = max(radiusPixels, 0.30);
-        pointColor = tint * illumination * pc.look.z;
+        radiusPixels = max(radiusPixels * sqrt(presence), 0.30);
+        pointColor = tint * illumination * pc.look.z * presence;
         pointFacing = smoothstep(-0.015, 0.025, viewNormal.z);
 
         vec4 clip = effectClip(position, viewNormal, radiusPixels);

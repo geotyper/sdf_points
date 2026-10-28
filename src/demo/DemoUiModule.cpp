@@ -15,7 +15,24 @@
 #include <initializer_list>
 
 namespace vkexp {
+
 namespace {
+
+// Trail of the 4D figures, shared by all of them.
+void fourDTrailControls(FourDTrailSettings& trail) {
+    ImGui::Checkbox("Trail", &trail.enabled);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Fading copies at earlier moments paint the paths of the motion.");
+    }
+    if (!trail.enabled) return;
+    ImGui::SliderInt("Trail copies", &trail.copies, 1, 32);
+    ImGui::SliderFloat("Trail spacing", &trail.spacing, 0.002F, 0.15F, "%.3f",
+                       ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Trail fade", &trail.fade, 0.3F, 4.0F, "%.2f");
+    ImGui::SliderFloat("Trail point size", &trail.shrink, 0.1F, 1.0F, "%.2f");
+}
+
+
 
 void drawTubeRidges(TubeRidges& ridges) {
     ImGui::SliderFloat("Ridge depth", &ridges.depth, 0.0F, 1.0F, "%.2f");
@@ -189,7 +206,8 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                         "600-cell",           "120-cell",
                                         "Duoprism",           "Tesseract + 16-cell",
                                         "Three 16-cells",     "Tesseract in tesseract",
-                                        "24-cell + dual",     "Torus knot"};
+                                        "24-cell + dual",     "Torus knot",
+                                        "Quasicrystal (6D)",  "Algebraic knot"};
         static_assert(shapeNames.size() == polytope4DCount);
         polytope.shape = std::clamp(polytope.shape, 0, polytope4DCount - 1);
         ImGui::Combo("Figure", &polytope.shape, shapeNames.data(), polytope4DCount);
@@ -202,6 +220,40 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Coprime p and q make one knot, otherwise a link of loops.");
             }
+        } else if (polytope.shape == static_cast<int>(Polytope4D::Quasicrystal)) {
+            ImGui::SliderFloat("Cluster radius", &polytope.crystalRadius, 1.5F, 6.0F, "%.1f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("In edge lengths. The 6D lattice points whose shadow falls in "
+                                  "the window, seen by their 3D shadow.");
+            }
+            ImGui::SliderFloat("Window", &polytope.crystalWindow, 0.5F, 1.6F, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("1 is the true quasicrystal; smaller thins it out, larger "
+                                  "crowds in overlapping tiles.");
+            }
+            ImGui::SliderFloat("Phason shift", &polytope.phasonShift, 0.0F, 0.9F, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("How far the window slides round its loop: vertices flip in "
+                                  "and out in waves.");
+            }
+            ImGui::SliderFloat("Phason speed", &polytope.phasonSpeed, -3.0F, 3.0F, "%.2f");
+            ImGui::SliderFloat("Flip softness", &polytope.crystalSoftness, 0.02F, 0.5F, "%.2f");
+        } else if (polytope.shape == static_cast<int>(Polytope4D::AlgebraicKnot)) {
+            ImGui::SliderInt("Power of z1 (p)", &polytope.knotP, 1, 7);
+            ImGui::SliderInt("Roots of g", &polytope.knotRoots, 1, 8);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("The curve z1^p = g(z2) on the 3-sphere. With the roots together "
+                                  "it is the (p, roots) torus knot.");
+            }
+            ImGui::SliderFloat("Root spread", &polytope.knotSpread, 0.0F, 0.8F, "%.2f");
+            ImGui::SliderFloat("Root wander", &polytope.knotWander, 0.0F, 0.6F, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Each root circles on its own; where roots meet, the curve is "
+                                  "singular and the knot changes.");
+            }
+            ImGui::SliderFloat("Wander speed", &polytope.knotSpeed, -3.0F, 3.0F, "%.2f");
+            ImGui::SliderFloat("Gain", &polytope.knotGain, 0.2F, 4.0F, "%.2f",
+                               ImGuiSliderFlags_Logarithmic);
         }
         constexpr std::array colorNames{"4D depth", "Parts", "4D directions",
                                         "Parts shaded by depth"};
@@ -287,6 +339,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Brightness", &polytope.brightness, 0.5F, 2.0F, "%.2f");
         ImGui::SliderAngle("Tilt", &polytope.tilt, -90.0F, 90.0F);
         ImGui::SliderFloat("Zoom", &polytope.zoom, 0.25F, 4.0F, "%.2f", ImGuiSliderFlags_Logarithmic);
+        fourDTrailControls(state_.fourDTrail);
         ImGui::ColorEdit3("Near color", polytope.nearColor.data());
         ImGui::ColorEdit3("Far color", polytope.farColor.data());
         if (ImGui::Button("Reset figure")) {
@@ -328,6 +381,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Brightness", &tesseract.brightness, 0.5F, 2.0F, "%.2f");
         ImGui::SliderAngle("Tilt", &tesseract.tilt, -90.0F, 90.0F);
         ImGui::SliderFloat("Zoom", &tesseract.zoom, 0.25F, 4.0F, "%.2f", ImGuiSliderFlags_Logarithmic);
+        fourDTrailControls(state_.fourDTrail);
         ImGui::ColorEdit3("Near color", tesseract.nearColor.data());
         ImGui::ColorEdit3("Far color", tesseract.farColor.data());
         if (ImGui::Button("Reset tesseract")) {
@@ -362,6 +416,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Brightness", &hopf.brightness, 0.5F, 2.0F, "%.2f");
         ImGui::SliderAngle("Tilt", &hopf.tilt, -90.0F, 90.0F);
         ImGui::SliderFloat("Zoom", &hopf.zoom, 0.25F, 4.0F, "%.2f", ImGuiSliderFlags_Logarithmic);
+        fourDTrailControls(state_.fourDTrail);
         if (ImGui::Button("Reset fibration")) {
             hopf = HopfSettings{};
         }

@@ -26,9 +26,21 @@ enum class Polytope4D : int {
     NestedTesseracts,    // a tesseract inside a tesseract
     DualTwentyFourCells, // a 24-cell with its dual
     TorusKnot,           // (p, q) torus knot on the Clifford torus
+    Quasicrystal,        // icosahedral quasicrystal cut from the 6D lattice (Quasicrystal.hpp)
+    AlgebraicKnot,       // link of z1^p = g(z2) on the 3-sphere (AlgebraicKnot.hpp)
 };
 
-inline constexpr int polytope4DCount = 12;
+inline constexpr int polytope4DCount = 14;
+
+// Edges the storage buffer holds.
+inline constexpr std::size_t polytopeEdgeLimit = 8192;
+
+// Figures rebuilt every frame on the CPU as they change; polytopeEdges() has
+// no edges for them.
+[[nodiscard]] inline bool polytopeIsAnimated(const int shape) {
+    return shape == static_cast<int>(Polytope4D::Quasicrystal) ||
+           shape == static_cast<int>(Polytope4D::AlgebraicKnot);
+}
 
 using Vec4d = std::array<double, 4>;
 
@@ -37,6 +49,7 @@ struct Edge4D {
     Vec4d end{};
     int part{};      // which polytope of a compound, or ring family of a duoprism
     int direction{}; // class of edges parallel in 4D
+    double presence{1.0}; // 0 .. 1: edges of changing figures fade in and out
 };
 
 namespace polytope_detail {
@@ -327,6 +340,9 @@ inline void classifyDirections(std::vector<Edge4D>& edges) {
     }
     case Polytope4D::TorusKnot:
         addTorusKnot(edges, std::clamp(p, 1, 32), std::clamp(q, 1, 32));
+        break;
+    case Polytope4D::Quasicrystal:
+    case Polytope4D::AlgebraicKnot:
         break;
     }
     classifyDirections(edges);

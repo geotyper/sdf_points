@@ -204,6 +204,32 @@ struct PolytopeSettings {
     int pointsAround{6};
     std::array<float, 3> nearColor{1.00F, 0.62F, 0.16F};
     std::array<float, 3> farColor{0.14F, 0.58F, 1.00F};
+    // Quasicrystal: cluster radius in edge lengths, window scale (1 exact),
+    // how softly vertices fade at the window, and the phason shift sliding the
+    // window round a loop, which flips vertices in waves.
+    float crystalRadius{3.2F};
+    float crystalWindow{1.0F};
+    float crystalSoftness{0.15F};
+    float phasonShift{0.45F};
+    float phasonSpeed{1.0F};
+    // Algebraic knot z1^p = g(z2): g has `knotRoots` roots on a ring of
+    // `knotSpread`, each wandering round its own circle of `knotWander`.
+    int knotP{2};
+    int knotRoots{3};
+    float knotSpread{0.0F};
+    float knotWander{0.30F};
+    float knotSpeed{1.0F};
+    float knotGain{1.0F};
+};
+
+// Trail of the 4D figures: fading copies drawn at earlier moments, so the
+// projected motion paints its paths.
+struct FourDTrailSettings {
+    bool enabled{false};
+    int copies{10};
+    float spacing{0.02F}; // animation time between copies
+    float fade{1.5F};     // brightness falls as (1 - age)^fade
+    float shrink{0.5F};   // the oldest copy's point size, as a share
 };
 
 struct EversionSettings {
@@ -480,6 +506,7 @@ struct DemoState {
     HopfSettings hopf;
     TesseractSettings tesseract;
     PolytopeSettings polytope;
+    FourDTrailSettings fourDTrail;
     EversionSettings eversion;
     SleeveSettings sleeve;
     MorphSettings morph;

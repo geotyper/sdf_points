@@ -69,7 +69,8 @@ void main() {
         // Rows near the 4D camera are dropped whole, decided at their ends.
         float wStart = polytopePoint4(gl_InstanceIndex, float(row) / float(along)).w;
         float wEnd = polytopePoint4(gl_InstanceIndex, float(row + 1) / float(along)).w;
-        if (polytopeTooClose(wStart) || polytopeTooClose(wEnd)) {
+        float presence = polytopePresence(gl_InstanceIndex);
+        if (polytopeTooClose(wStart) || polytopeTooClose(wEnd) || presence < 0.5) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
             return;
         }
@@ -80,7 +81,7 @@ void main() {
         float angle = TAU * float(corner.y) / float(around);
         vec3 outward = normal * cos(angle) + binormal * sin(angle);
         // A hair inside the points, so they sit on the skin and not under it.
-        gl_Position = projectPoint(center + 0.97 * pc.shape.y * polytopeScale(w) * outward);
+        gl_Position = projectPoint(center + 0.97 * pc.shape.y * polytopeScale(w) * presence * outward);
         vec4 tubes = polytopeData[3];
         if (tubes.x > 0.5) {
             float glow;

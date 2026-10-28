@@ -232,6 +232,18 @@ drifting field of crossed sine waves displaces every point in 4D before the proj
 so the figure ripples as it moves through it; amount, scale and speed are adjustable
 and loops stay seamless.
 
+Two figures change as they play, rebuilt every frame. **Quasicrystal (6D)** cuts the
+icosahedral quasicrystal from the 6D integer lattice: the lattice points whose shadow
+in the perpendicular 3D space falls inside a rhombic triacontahedron, shown by their
+shadow in ordinary space, with lattice steps as edges. The **Phason shift** slides
+that window round a loop, so vertices flip in and out in waves, fading softly at the
+window's faces. **Algebraic knot** is the curve z1^p = g(z2) where it meets the
+3-sphere: with the roots of g together it is the (p, q) torus knot, and as the roots
+wander apart and meet, the curve passes through singular ones and the knot turns into
+other knots and links (**Colour by** parts shows the link's loops). All three 4D modes
+also have a **Trail**: fading copies at earlier moments paint the paths the projected
+4D motion takes.
+
 **Effects** is a separate window whose settings apply to the points of every geometry.
 **Drift** moves neighbouring points together in a slow flow and **Jitter** makes each
 tremble on its own; both slide points along the surface or away from it. **Shed

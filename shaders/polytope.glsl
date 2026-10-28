@@ -3,7 +3,7 @@
 // scale, noise rate, 0), (coil wave: 0 steady, 1 along edges, 2 across the
 // figure; wave length, wave rate, 0), (tubes: 0 black, 1 flat, 2 shaded to
 // black at the rim; tube darkness, camera zoom, 0); then the edges, three vec4 each: start, end,
-// (colour, part). Push constants: shape = size, tube radius, 4D
+// (colour, part + 0.999 * how far the edge has faded out). Push constants: shape = size, tube radius, 4D
 // camera distance, XW turn rate; points = samples along an edge, around its
 // tube, pixel radius, edge count; look.w = YZ turn rate; style.rgb = near
 // colour; wave = far colour + spin rate; motion = ZW turn rate, colour mode,
@@ -28,6 +28,15 @@ vec4 polytopeNoise(vec4 q) {
                   sin(1.5 * p.w + 0.8 * p.x - first) + 0.5 * sin(1.4 * p.y - 0.6 * p.z + second),
                   sin(1.2 * p.x - 1.0 * p.y + second) + 0.5 * sin(1.6 * p.z + 0.4 * p.w + first));
     return n / 1.5;
+}
+
+float polytopePart(int edge) {
+    return floor(polytopeEdge(edge, 2).w);
+}
+
+// 1 for a whole edge; changing figures fade theirs in and out.
+float polytopePresence(int edge) {
+    return 1.0 - fract(polytopeEdge(edge, 2).w) / 0.999;
 }
 
 int polytopeFlags() {
@@ -81,7 +90,7 @@ float polytopeCoilWave(vec4 start, vec4 end, float along) {
 
 vec4 polytopePoint4(int edge, float along) {
     vec4 start = polytopeEdge(edge, 0), end = polytopeEdge(edge, 1);
-    float part = polytopeEdge(edge, 2).w;
+    float part = polytopePart(edge);
     vec4 shaping = polytopeData[0];
     vec4 q = mix(start, end, along);
     // Bend: 0 straight, 1 along the great circle on the part's own 3-sphere,

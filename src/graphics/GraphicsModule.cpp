@@ -1,11 +1,13 @@
 #include "vkexp/graphics/GraphicsModule.hpp"
 
 #include "vkexp/core/VulkanContext.hpp"
+#include "vkexp/demo/AlgebraicKnot.hpp"
 #include "vkexp/demo/ArchLattice.hpp"
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/PointLattice.hpp"
+#include "vkexp/demo/Quasicrystal.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/profiling/Profiler.hpp"
 
@@ -92,7 +94,7 @@ void GraphicsModule::onAttach(AppContext& context) {
     effectsWrite.pBufferInfo = &effectsInfo;
     // Two vec4 of shaping, then room for the largest figure: the 120-cell's
     // 1200 edges, three vec4 each.
-    constexpr VkDeviceSize polytopeBytes = (16U + 2048U * 12U) * sizeof(float);
+    constexpr VkDeviceSize polytopeBytes = (16U + polytopeEdgeLimit * 12U) * sizeof(float);
     polytope_.create(context.vulkan.physicalDevice(), device,
                      BufferResourceConfig{polytopeBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
@@ -469,14 +471,54 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         const auto& polytope = state_.polytope;
         int polytopeAlong = 1;
         if (braid.geometryMode == 19) {
-            // Rebuild the edges only when the figure changes; the colours are
-            // rewritten every frame so palette edits show at once.
+            // Rebuild the edges only when the figure changes, or every frame for
+            // the changing figures; the colours are rewritten every frame so
+            // palette edits show at once.
             const std::array key{polytope.shape, polytope.duoprismP, polytope.duoprismQ};
-            if (key != polytopeKey_) {
+            const bool animated = polytopeIsAnimated(polytope.shape);
+            if (key != polytopeKey_ || animated) {
                 polytopeKey_ = key;
-                const auto edges = polytopeEdges(static_cast<Polytope4D>(polytope.shape),
-                                                 polytope.duoprismP, polytope.duoprismQ);
-                polytopeEdgeCount_ = static_cast<int>(std::min<std::size_t>(edges.size(), 2048U));
+                // Seamless loops: the same rounding as the shader's timePhase.
+                const auto phase = [&](const double rate) {
+                    const double rounded =
+                        loopCycles_ > 0.0F ? std::round(rate * loopCycles_) / loopCycles_ : rate;
+                    return static_cast<double>(eversionTime_) * rounded;
+                };
+                std::vector<Edge4D> edges;
+                if (polytope.shape == static_cast<int>(Polytope4D::Quasicrystal)) {
+                    // The window slides round a tilted loop in perpendicular space.
+                    const double a = phase(polytope.phasonSpeed);
+                    const double shift = polytope.phasonShift;
+                    edges = quasicrystalEdges(
+                        {polytope.crystalRadius, polytope.crystalWindow, polytope.crystalSoftness,
+                         {shift * std::cos(a), shift * std::sin(a), 0.5 * shift * std::sin(2.0 * a)}},
+                        polytopeEdgeLimit);
+                } else if (polytope.shape == static_cast<int>(Polytope4D::AlgebraicKnot)) {
+                    // Roots on a ring, each wandering round its own small circle at
+                    // its own whole-number rate; where two meet the link changes.
+                    constexpr double tau = 6.28318530717958647692;
+                    AlgebraicKnotShape knot;
+                    knot.p = std::clamp(polytope.knotP, 1, 7);
+                    knot.gain = polytope.knotGain;
+                    const int roots = std::clamp(polytope.knotRoots, 1, 8);
+                    const double a = phase(polytope.knotSpeed);
+                    for (int j = 0; j < roots; ++j) {
+                        const double place = tau * j / roots;
+                        const double rate = (j % 2 == 0 ? 1.0 : -1.0) * (1 + j / 2);
+                        std::complex<double> root =
+                            std::polar(static_cast<double>(polytope.knotSpread), place) +
+                            std::polar(static_cast<double>(polytope.knotWander), rate * a + place);
+                        if (std::abs(root) > 0.95) root *= 0.95 / std::abs(root);
+                        knot.roots.push_back(root);
+                    }
+                    edges = algebraicKnotEdges(knot, polytopeEdgeLimit);
+                    for (auto& edge : edges) edge.direction = edge.part;
+                } else {
+                    edges = polytopeEdges(static_cast<Polytope4D>(polytope.shape),
+                                          polytope.duoprismP, polytope.duoprismQ);
+                }
+                polytopeEdgeCount_ =
+                    static_cast<int>(std::min<std::size_t>(edges.size(), polytopeEdgeLimit));
                 polytopeData_.assign(16U + static_cast<std::size_t>(polytopeEdgeCount_) * 12U, 0.0F);
                 polytopeClasses_.resize(static_cast<std::size_t>(polytopeEdgeCount_));
                 for (std::size_t edge = 0; edge < polytopeClasses_.size(); ++edge) {
@@ -486,7 +528,9 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                         out[i] = static_cast<float>(source.start[i]);
                         out[4 + i] = static_cast<float>(source.end[i]);
                     }
-                    out[11] = static_cast<float>(source.part);
+                    // The fraction carries how far the edge has faded out.
+                    out[11] = static_cast<float>(source.part) +
+                              0.999F * static_cast<float>(1.0 - std::clamp(source.presence, 0.0, 1.0));
                     polytopeClasses_[edge] = {source.part, source.direction};
                 }
             }
@@ -1194,35 +1238,61 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                     static_cast<std::uint32_t>(sizeof(cubeDraw)), cubeDraw.data());
                 vkCmdDraw(commands, 6, cubePointCount, 0, 0);
             }
-        } else if (braid.geometryMode == 19) {
-            vkCmdDraw(commands, 6,
-                      static_cast<std::uint32_t>(polytopeEdgeCount_ * polytopeAlong *
-                                                 polytope.pointsAround),
-                      0, 0);
-        } else if (braid.geometryMode == 18) {
-            const auto& tesseract = state_.tesseract;
-            vkCmdDraw(commands, 6,
-                      static_cast<std::uint32_t>(32 * tesseract.pointsAlong *
-                                                 tesseract.pointsAround),
-                      0, 0);
-        } else if (braid.geometryMode == 17) {
-            // One draw per torus with its palette colour; the shader reads which.
-            const auto& hopf = state_.hopf;
-            const auto torusPoints =
-                static_cast<std::uint32_t>(hopf.fibers * hopf.pointsAlong * hopf.pointsAround);
-            for (int torus = 0; torus < hopf.tori; ++torus) {
-                const auto& tint =
-                    state_.palette.colors[static_cast<std::size_t>(torus) %
-                                          state_.palette.colors.size()];
-                vkCmdPushConstants(commands, pipelineLayout_,
-                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                   16U * sizeof(float), 3U * sizeof(float), tint.data());
-                const auto torusIndex = static_cast<float>(torus);
-                vkCmdPushConstants(commands, pipelineLayout_,
-                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                   25U * sizeof(float), sizeof(float), &torusIndex);
-                vkCmdDraw(commands, 6, torusPoints, 0, 0);
+        } else if (braid.geometryMode >= 17 && braid.geometryMode <= 19) {
+            const auto drawFourD = [&] {
+                if (braid.geometryMode == 19) {
+                    vkCmdDraw(commands, 6,
+                              static_cast<std::uint32_t>(polytopeEdgeCount_ * polytopeAlong *
+                                                         polytope.pointsAround),
+                              0, 0);
+                } else if (braid.geometryMode == 18) {
+                    const auto& tesseract = state_.tesseract;
+                    vkCmdDraw(commands, 6,
+                              static_cast<std::uint32_t>(32 * tesseract.pointsAlong *
+                                                         tesseract.pointsAround),
+                              0, 0);
+                } else {
+                    // One draw per torus with its palette colour; the shader reads which.
+                    const auto& hopf = state_.hopf;
+                    const auto torusPoints =
+                        static_cast<std::uint32_t>(hopf.fibers * hopf.pointsAlong * hopf.pointsAround);
+                    for (int torus = 0; torus < hopf.tori; ++torus) {
+                        const auto& tint =
+                            state_.palette.colors[static_cast<std::size_t>(torus) %
+                                                  state_.palette.colors.size()];
+                        vkCmdPushConstants(commands, pipelineLayout_,
+                                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                           16U * sizeof(float), 3U * sizeof(float), tint.data());
+                        const auto torusIndex = static_cast<float>(torus);
+                        vkCmdPushConstants(commands, pipelineLayout_,
+                                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                           25U * sizeof(float), sizeof(float), &torusIndex);
+                        vkCmdDraw(commands, 6, torusPoints, 0, 0);
+                    }
+                }
+            };
+            // The trail first: copies at earlier moments, dimmer and smaller,
+            // under the figure itself. Each changes the time, point size and
+            // brightness, which are put back after.
+            const auto& trail = state_.fourDTrail;
+            if (trail.enabled && trail.copies > 0) {
+                const auto pushOne = [&](const std::uint32_t index, const float value) {
+                    vkCmdPushConstants(commands, pipelineLayout_,
+                                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                       index * sizeof(float), sizeof(float), &value);
+                };
+                for (int copy = trail.copies; copy >= 1; --copy) {
+                    const float age = static_cast<float>(copy) / static_cast<float>(trail.copies + 1);
+                    pushOne(2U, pushConstants[2] - trail.spacing * static_cast<float>(copy));
+                    pushOne(10U, pushConstants[10] * (1.0F + (trail.shrink - 1.0F) * age));
+                    pushOne(14U, pushConstants[14] * std::pow(1.0F - age, trail.fade));
+                    drawFourD();
+                }
+                for (const std::uint32_t index : {2U, 10U, 14U}) {
+                    pushOne(index, pushConstants[index]);
+                }
             }
+            drawFourD();
         } else if (braid.geometryMode == 5) {
             vkCmdDraw(commands, 6, static_cast<std::uint32_t>(state_.eversion.pointCount), 0, 0);
         } else if (braid.geometryMode == 6) {
