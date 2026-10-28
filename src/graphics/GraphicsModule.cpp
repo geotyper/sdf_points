@@ -513,7 +513,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                                      0.0F,
                                      static_cast<float>(polytope.tubes),
                                      polytope.tubeDarkness,
-                                     0.0F,
+                                     polytope.zoom,
                                      0.0F};
             std::copy(shaping.begin(), shaping.end(), polytopeData_.begin());
             if (polytopeEdgeCount_ > 0) {
@@ -628,7 +628,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 loopCycles_,
                 tesseract.lightStrength,
                 0.0F,
-                0.0F,
+                tesseract.zoom,
             };
         } else if (braid.geometryMode == 17) {
             const auto& hopf = state_.hopf;
@@ -664,7 +664,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 loopCycles_,
                 0.0F,
                 0.0F,
-                0.0F,
+                hopf.zoom,
             };
         } else if (braid.geometryMode == 4) {
             const auto& spheres = state_.nestedSpheres;

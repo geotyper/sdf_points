@@ -286,6 +286,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Glow", &polytope.glow, 0.0F, 1.5F, "%.2f");
         ImGui::SliderFloat("Brightness", &polytope.brightness, 0.5F, 2.0F, "%.2f");
         ImGui::SliderAngle("Tilt", &polytope.tilt, -90.0F, 90.0F);
+        ImGui::SliderFloat("Zoom", &polytope.zoom, 0.25F, 4.0F, "%.2f", ImGuiSliderFlags_Logarithmic);
         ImGui::ColorEdit3("Near color", polytope.nearColor.data());
         ImGui::ColorEdit3("Far color", polytope.farColor.data());
         if (ImGui::Button("Reset figure")) {
@@ -326,6 +327,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Glow", &tesseract.glow, 0.0F, 1.5F, "%.2f");
         ImGui::SliderFloat("Brightness", &tesseract.brightness, 0.5F, 2.0F, "%.2f");
         ImGui::SliderAngle("Tilt", &tesseract.tilt, -90.0F, 90.0F);
+        ImGui::SliderFloat("Zoom", &tesseract.zoom, 0.25F, 4.0F, "%.2f", ImGuiSliderFlags_Logarithmic);
         ImGui::ColorEdit3("Near color", tesseract.nearColor.data());
         ImGui::ColorEdit3("Far color", tesseract.farColor.data());
         if (ImGui::Button("Reset tesseract")) {
@@ -359,6 +361,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Glow", &hopf.glow, 0.0F, 1.5F, "%.2f");
         ImGui::SliderFloat("Brightness", &hopf.brightness, 0.5F, 2.0F, "%.2f");
         ImGui::SliderAngle("Tilt", &hopf.tilt, -90.0F, 90.0F);
+        ImGui::SliderFloat("Zoom", &hopf.zoom, 0.25F, 4.0F, "%.2f", ImGuiSliderFlags_Logarithmic);
         if (ImGui::Button("Reset fibration")) {
             hopf = HopfSettings{};
         }

@@ -112,6 +112,7 @@ struct NestedCubeSettings {
 };
 
 struct HopfSettings {
+    float zoom{1.0F}; // camera: 1 frames the whole figure, more comes closer
     bool paused{};
     float animationSpeed{0.30F};
     float flow{2.0F};       // lights running along the fibres
@@ -135,6 +136,7 @@ struct HopfSettings {
 };
 
 struct TesseractSettings {
+    float zoom{1.0F}; // camera: 1 frames the whole figure, more comes closer
     bool paused{};
     float animationSpeed{0.30F};
     float turnXW{1.0F};  // turns through the fourth dimension per flow cycle
@@ -157,6 +159,7 @@ struct TesseractSettings {
 
 // Regular 4D polytopes and compounds of them (see Polytope4D.hpp).
 struct PolytopeSettings {
+    float zoom{1.0F}; // camera: 1 frames the whole figure, more comes closer
     bool paused{};
     int shape{3}; // Polytope4D
     int duoprismP{6};

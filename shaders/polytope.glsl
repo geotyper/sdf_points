@@ -2,7 +2,7 @@
 // (edge bend, coil size, coil turns, coil flow rate), (4D noise amount, noise
 // scale, noise rate, 0), (coil wave: 0 steady, 1 along edges, 2 across the
 // figure; wave length, wave rate, 0), (tubes: 0 black, 1 flat, 2 shaded to
-// black at the rim; tube darkness, 0, 0); then the edges, three vec4 each: start, end,
+// black at the rim; tube darkness, camera zoom, 0); then the edges, three vec4 each: start, end,
 // (colour, part). Push constants: shape = size, tube radius, 4D
 // camera distance, XW turn rate; points = samples along an edge, around its
 // tube, pixel radius, edge count; look.w = YZ turn rate; style.rgb = near
@@ -63,7 +63,7 @@ float polytopeSpan() {
     // Bulging edges, coils and noise all reach a little further out.
     vec4 shaping = polytopeData[0];
     float growth = 1.0 + 0.3 * max(shaping.x - 1.0, 0.0) + 0.5 * shaping.y + polytopeData[1].x;
-    return pc.shape.x * min(reach * growth, 3.0) * 1.08;
+    return pc.shape.x * min(reach * growth, 3.0) * 1.08 / max(polytopeData[3].z, 0.05);
 }
 
 // Coil size as a wave runs through it: crests travel along every edge from

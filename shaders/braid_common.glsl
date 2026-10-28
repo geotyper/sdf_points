@@ -300,8 +300,14 @@ float hopfLatitude(float torus) {
          + pc.motion.z * sin(timePhase(1.0) + TAU * torus / tori);
 }
 
+// Camera zoom of the Hopf fibration and the tesseract in loop.w: 0 or 1 frame
+// the whole figure, more comes closer.
+float fourDZoom() {
+    return pc.loop.w > 0.0 ? pc.loop.w : 1.0;
+}
+
 float hopfSpan() {
-    return pc.shape.x * 3.4;
+    return pc.shape.x * 3.4 / fourDZoom();
 }
 
 // Fibres reaching further than this pass near the projection pole: dropped.
@@ -396,7 +402,7 @@ float tesseractSpan() {
         float angle = 0.5 * PI * float(i) / 32.0;
         reach = max(reach, 2.0 * cos(angle) * tesseractScale(2.0 * sin(angle)));
     }
-    return pc.shape.x * reach * 1.08;
+    return pc.shape.x * reach * 1.08 / fourDZoom();
 }
 
 // Point on the tube around one edge; the tube swells with the 4D perspective.
