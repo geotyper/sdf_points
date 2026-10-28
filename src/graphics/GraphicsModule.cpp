@@ -890,9 +890,9 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 hopf.spin,
                 0.0F,
                 hopf.breathing,
-                0.0F,
+                static_cast<float>(hopf.knotP),
                 loopCycles_,
-                0.0F,
+                static_cast<float>(hopf.knotQ),
                 0.0F,
                 hopf.zoom,
             };
@@ -1360,6 +1360,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                       braid.geometryMode == 19 ? static_cast<std::uint32_t>(polytopeAlong) * 12U * 6U
                       : fourSurfaceMode
                           ? static_cast<std::uint32_t>(surfaceSkin.columns * surfaceSkin.rows * 6)
+                      : braid.geometryMode == 17 && (state_.hopf.knotP != 1 || state_.hopf.knotQ != 1)
+                          ? 720U * 24U * 6U
                       : braid.geometryMode == 17 || braid.geometryMode == 18 ? 240U * 24U * 6U
                                                                              : 720U * 64U * 6U,
                       objectCount, 0, 0);

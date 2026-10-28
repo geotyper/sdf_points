@@ -585,6 +585,13 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Breathing", &hopf.breathing, 0.0F, 0.25F, "%.3f");
         ImGui::SliderInt("Tori", &hopf.tori, 1, 6);
         ImGui::SliderInt("Circles per torus", &hopf.fibers, 3, 32);
+        ImGui::SliderInt("Fibre knot p", &hopf.knotP, 1, 5);
+        ImGui::SliderInt("Fibre knot q", &hopf.knotQ, 1, 5);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("1, 1 gives circles; otherwise every fibre is a (p, q) torus knot "
+                              "(2, 3: trefoils), still all linked. Coprime p, q; raise Points "
+                              "along, knots are longer.");
+        }
         ImGui::SliderFloat("Inner latitude", &hopf.innerLatitude, 0.05F, 1.40F, "%.2f");
         ImGui::SliderFloat("Outer latitude", &hopf.outerLatitude, 0.05F, 1.40F, "%.2f");
         ImGui::SliderFloat("Scale", &hopf.scale, 0.25F, 1.00F, "%.2f");

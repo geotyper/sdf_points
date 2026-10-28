@@ -131,6 +131,8 @@ struct HopfSettings {
     float tilt{0.45F};
     int tori{3};
     int fibers{14};
+    int knotP{1}; // fibres wind p times one way and q the other: (p, q) torus knots
+    int knotQ{1};
     int pointsAlong{240};
     int pointsAround{8};
 };

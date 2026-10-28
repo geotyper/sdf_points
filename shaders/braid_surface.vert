@@ -135,8 +135,9 @@ void main() {
         return;
     }
     if (hopfMode()) {
-        // One instance per fibre: 240 rows along it, 24 around its tube.
-        const ivec2 grid = ivec2(240, 24);
+        // One instance per fibre: 240 rows along it (720 for knots, which are
+        // longer), 24 around its tube; the draw sizes itself to match.
+        ivec2 grid = ivec2(hopfKnotted() ? 720 : 240, 24);
         int fibers = max(int(pc.points.w + 0.5), 1);
         float torus = float(gl_InstanceIndex / fibers);
         float fiber = float(gl_InstanceIndex % fibers);

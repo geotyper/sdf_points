@@ -312,7 +312,20 @@ vec3 roundedCubeNormal(vec3 p) {
 // shape = scale, tube radius, 4D tumble angle, tumble rate; points = samples
 // along a fibre, around its tube, pixel radius, fibres per torus; look.w =
 // tori; wave = innermost and outermost latitude, light flow rate, fibre drift
-// rate; motion.x = spin rate, motion.y = torus drawn, motion.z = breathing.
+// rate; motion.x = spin rate, motion.y = torus drawn, motion.z = breathing,
+// motion.w = knot p; loop.y = knot q.
+//
+// With p, q other than 1, 1 the circles become (p, q) torus knots: the orbits
+// of t -> (e^(i p t) z1, e^(i q t) z2), the Seifert fibration of the 3-sphere,
+// and still any two fibres link.
+ivec2 hopfKnot() {
+    return ivec2(max(int(pc.motion.w + 0.5), 1), max(int(pc.loop.y + 0.5), 1));
+}
+
+bool hopfKnotted() {
+    return hopfKnot() != ivec2(1);
+}
+
 float hopfLatitude(float torus) {
     float tori = max(pc.look.w, 1.0);
     return mix(pc.wave.x, pc.wave.y, torus / max(tori - 1.0, 1.0))
@@ -337,12 +350,16 @@ float hopfCutoff() {
 // Point at fibre parameter t (0 .. 4 pi once around) of one fibre of a torus.
 vec3 hopfPoint(float t, float torus, float fiber) {
     float eta = hopfLatitude(torus);
-    // Neighbouring tori are staggered by half a fibre.
-    float alpha = TAU * (fiber + 0.5 * mod(torus, 2.0)) / max(pc.points.w, 1.0);
+    // Neighbouring tori are staggered by half a fibre. Starting points (a, -a)
+    // lie on different fibres while (p + q) a stays within a turn.
+    ivec2 knot = hopfKnot();
+    float alpha = 2.0 * TAU * (fiber + 0.5 * mod(torus, 2.0))
+                / (max(pc.points.w, 1.0) * float(knot.x + knot.y));
     // Turning z1 and z2 against each other moves every fibre to the next base
     // point; a whole turn of beta returns every point, so the drift loops.
     float beta = timePhase(pc.wave.w);
-    float first = 0.5 * (t + alpha) + beta, second = 0.5 * (t - alpha) - beta;
+    float first = 0.5 * (float(knot.x) * t + alpha) + beta;
+    float second = 0.5 * (float(knot.y) * t - alpha) - beta;
     vec4 q = vec4(cos(eta) * vec2(cos(first), sin(first)),
                   sin(eta) * vec2(cos(second), sin(second)));
     // A tilt in 4D rolls the tori through each other and through infinity.

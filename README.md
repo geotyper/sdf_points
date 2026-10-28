@@ -199,7 +199,9 @@ one base point to the next, and a tilt in four dimensions rolls the tori through
 other. Launch it with `--preset hopf-fibration`. Controls cover light flow, drift,
 spin, 4D tumble and its rate, breathing, the number of tori and circles, their
 latitudes, scale, tube radius, point counts, point appearance and tilt; the tori take
-the palette colours.
+the palette colours. **Fibre knot p, q** turns every circle into a (p, q) torus knot,
+the orbits of the Seifert fibration t -> (e^(ipt) z1, e^(iqt) z2): trefoils at 2, 3,
+all still linked with one another.
 
 **Tesseract** is the 4D cube: its 32 edges, as tubes of points, turned in four
 dimensions and seen in perspective from a 4D camera, so its far cell sits inside its
