@@ -12,7 +12,8 @@
 // loop = cycles, 4D camera distance (0 = flat), pulse strength, zoom.
 // The polytope storage buffer holds the palette in its first five vec4 and,
 // in the sixth: the flow rate (Milnor: sheet turn rate), the pulse's waves
-// along s, the knot's q and how many Milnor sheets.
+// along s, the knot's q and how many Milnor sheets; in the seventh the
+// Moebius flow amount and rate.
 
 // Magnifications past this are too near the 4D camera and left out.
 const float FOUR_SURFACE_NEAR = 6.0;
@@ -132,7 +133,8 @@ vec4 fourSurfaceTurn(vec4 p) {
 // The point in the scene; `w` is its turned 4D depth, `magnification` how
 // much the 4D perspective enlarges it.
 vec3 fourSurfacePoint(int piece, vec2 st, out float tag, out float w, out float magnification) {
-    vec4 p = fourSurfaceTurn(fourSurfaceLocal(piece, st, tag));
+    vec4 p = mobiusFlow(fourSurfaceTurn(fourSurfaceLocal(piece, st, tag)), polytopeData[6].x,
+                        polytopeData[6].y);
     w = p.w;
     magnification = 1.0;
     float distance = pc.loop.y;

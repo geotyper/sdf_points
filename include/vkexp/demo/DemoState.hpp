@@ -131,6 +131,7 @@ struct HopfSettings {
     float tilt{0.45F};
     int tori{3};
     int fibers{14};
+    float mobius{0.0F}; // Moebius flow: rapidity of the conformal push
     int knotP{1}; // fibres wind p times one way and q the other: (p, q) torus knots
     int knotQ{1};
     int pointsAlong{240};
@@ -224,6 +225,8 @@ struct PolytopeSettings {
     float knotGain{1.0F};
     // Hyperbolic honeycomb: cube widths it flows through per loop of time.
     float hyperbolicFlow{1.0F};
+    float mobius{0.0F}; // Moebius flow: rapidity of the conformal push
+    float mobiusRate{1.0F};
 };
 
 // 3D cross-sections of solid 4D bodies: the hyperplane sweeps and the body
@@ -292,6 +295,8 @@ struct FourSurfaceSettings {
     float turnZW{1.0F};
     float cameraDistance{0.0F}; // 4D perspective; 0 is a flat projection
     float flow{0.0F}; // material sliding round the closed surfaces; Milnor: sheets turning
+    float mobius{0.0F}; // Moebius flow: rapidity of the conformal push
+    float mobiusRate{1.0F};
     float pulse{0.0F};
     float pulseRate{1.0F};
     int pulseWaves{3};

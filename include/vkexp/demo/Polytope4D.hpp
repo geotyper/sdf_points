@@ -34,6 +34,8 @@ enum class Polytope4D : int {
 inline constexpr int polytope4DCount = 15;
 
 // Edges the storage buffer holds.
+// Floats of shaping ahead of the edges in the polytope buffer (polytope.glsl).
+inline constexpr std::size_t polytopeHeaderFloats = 20;
 inline constexpr std::size_t polytopeEdgeLimit = 8192;
 
 // Figures rebuilt every frame on the CPU as they change; polytopeEdges() has

@@ -314,6 +314,12 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Noise scale", &polytope.noiseScale, 0.5F, 8.0F, "%.2f");
         ImGui::SliderFloat("Noise speed", &polytope.noiseSpeed, -3.0F, 3.0F, "%.2f");
         ImGui::EndDisabled();
+        ImGui::SliderFloat("Moebius flow", &polytope.mobius, 0.0F, 2.5F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("A conformal map of the 3-sphere: the figure pours towards a moving pole and "
+                              "out again; circles stay circles.");
+        }
+        ImGui::SliderFloat("Moebius rate", &polytope.mobiusRate, -3.0F, 3.0F, "%.2f");
         ImGui::SeparatorText("Tubes");
         const char* tubeStyles[] = {"Black", "Point colour", "Point colour to black"};
         ImGui::Combo("Tube colour", &polytope.tubes, tubeStyles, IM_ARRAYSIZE(tubeStyles));
@@ -477,6 +483,12 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Pulse rate", &surface.pulseRate, -4.0F, 4.0F, "%.2f");
         ImGui::SliderInt("Pulse waves", &surface.pulseWaves, 1, 8);
         ImGui::SliderFloat("Spin", &surface.spin, -2.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Moebius flow", &surface.mobius, 0.0F, 2.5F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("A conformal map of the 3-sphere: the figure pours towards a moving pole and "
+                              "out again; circles stay circles.");
+        }
+        ImGui::SliderFloat("Moebius rate", &surface.mobiusRate, -3.0F, 3.0F, "%.2f");
         ImGui::SeparatorText("Points");
         ImGui::SliderInt("Point budget", &surface.pointBudget, 20000, 2000000, "%d",
                          ImGuiSliderFlags_Logarithmic);
@@ -577,6 +589,11 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         }
         ImGui::SliderFloat("Fibre drift", &hopf.drift, -3.0F, 3.0F, "%.2f");
         ImGui::SliderFloat("Spin", &hopf.spin, -2.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Moebius flow", &hopf.mobius, 0.0F, 2.5F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("A conformal map of the 3-sphere: the figure pours towards a moving pole and "
+                              "out again; circles stay circles.");
+        }
         ImGui::SliderAngle("4D tumble", &hopf.tumble, 0.0F, 90.0F);
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Tilt in four dimensions: the tori roll through each other.");

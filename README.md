@@ -275,6 +275,11 @@ stereographic projection. **Material flow** carries the points round the closed
 surfaces and **Pulse** runs bands of light along them; a depth skin hides the far
 side as on every other surface.
 
+**Moebius flow** (4D polytopes, 4D surfaces and the Hopf fibration) adds a
+conformal map of the 3-sphere on top of the turns: the boost that pushes every
+point towards a pole. The pole circles round and the push swells and eases, so the
+figure pours towards one place and out again while circles stay circles.
+
 **Effects** is a separate window whose settings apply to the points of every geometry.
 **Drift** moves neighbouring points together in a slow flow and **Jitter** makes each
 tremble on its own; both slide points along the surface or away from it. **Shed

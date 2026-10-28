@@ -3,7 +3,8 @@
 // scale, noise rate, 0), (coil wave: 0 steady, 1 along edges, 2 across the
 // figure; wave length, wave rate, hyperbolic flow period), (tubes: 0 black,
 // 1 flat, 2 shaded to black at the rim; tube darkness, camera zoom,
-// hyperbolic flow rate); then the edges, three vec4 each: start, end,
+// hyperbolic flow rate), (Moebius flow amount, its rate, 0, 0); then the
+// edges, three vec4 each: start, end,
 // (colour, part + 0.999 * how far the edge has faded out). Push constants: shape = size, tube radius, 4D
 // camera distance, XW turn rate; points = samples along an edge, around its
 // tube, pixel radius, edge count; look.w = YZ turn rate; style.rgb = near
@@ -15,7 +16,7 @@ layout(set = 0, binding = 2, std430) readonly buffer PolytopeEdges {
 };
 
 vec4 polytopeEdge(int edge, int slot) {
-    return polytopeData[4 + 3 * edge + slot];
+    return polytopeData[5 + 3 * edge + slot];
 }
 
 // Smooth 4D displacement: crossed sine waves in all four coordinates, drifting
@@ -147,7 +148,7 @@ vec4 polytopePoint4(int edge, float along) {
     if (polytopeData[1].x > 0.0) {
         q += polytopeData[1].x * polytopeNoise(q);
     }
-    return q;
+    return mobiusFlow(q, polytopeData[4].x, polytopeData[4].y);
 }
 
 vec3 polytopeProject(vec4 q) {

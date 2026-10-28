@@ -97,9 +97,10 @@ void GraphicsModule::onAttach(AppContext& context) {
     effectsWrite.descriptorCount = 1;
     effectsWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     effectsWrite.pBufferInfo = &effectsInfo;
-    // Two vec4 of shaping, then room for the largest figure: the 120-cell's
-    // 1200 edges, three vec4 each.
-    constexpr VkDeviceSize polytopeBytes = (16U + polytopeEdgeLimit * 12U) * sizeof(float);
+    // Five vec4 of shaping, then room for the largest figure, three vec4 per
+    // edge.
+    constexpr VkDeviceSize polytopeBytes =
+        (polytopeHeaderFloats + polytopeEdgeLimit * 12U) * sizeof(float);
     polytope_.create(context.vulkan.physicalDevice(), device,
                      BufferResourceConfig{polytopeBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
@@ -563,11 +564,11 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 }
                 polytopeEdgeCount_ =
                     static_cast<int>(std::min<std::size_t>(edges.size(), polytopeEdgeLimit));
-                polytopeData_.assign(16U + static_cast<std::size_t>(polytopeEdgeCount_) * 12U, 0.0F);
+                polytopeData_.assign(polytopeHeaderFloats + static_cast<std::size_t>(polytopeEdgeCount_) * 12U, 0.0F);
                 polytopeClasses_.resize(static_cast<std::size_t>(polytopeEdgeCount_));
                 for (std::size_t edge = 0; edge < polytopeClasses_.size(); ++edge) {
                     const auto& source = edges[edge];
-                    float* out = polytopeData_.data() + 16U + edge * 12U;
+                    float* out = polytopeData_.data() + polytopeHeaderFloats + edge * 12U;
                     for (std::size_t i = 0; i < 4; ++i) {
                         out[i] = static_cast<float>(source.start[i]);
                         out[4 + i] = static_cast<float>(source.end[i]);
@@ -585,7 +586,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 const auto group = static_cast<std::size_t>(polytopeClasses_[edge][byDirection ? 1 : 0]);
                 const auto& color = colors[group % colors.size()];
                 std::copy(color.begin(), color.end(),
-                          polytopeData_.begin() + static_cast<std::ptrdiff_t>(16U + edge * 12U + 8U));
+                          polytopeData_.begin() + static_cast<std::ptrdiff_t>(polytopeHeaderFloats + edge * 12U + 8U));
             }
             const bool hyperbolic = polytope.shape == static_cast<int>(Polytope4D::HyperbolicCubes);
             const std::array shaping{polytope.edgeBend,
@@ -603,7 +604,11 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                                      static_cast<float>(polytope.tubes),
                                      polytope.tubeDarkness,
                                      polytope.zoom,
-                                     polytope.hyperbolicFlow};
+                                     polytope.hyperbolicFlow,
+                                     polytope.mobius,
+                                     polytope.mobiusRate,
+                                     0.0F,
+                                     0.0F};
             std::copy(shaping.begin(), shaping.end(), polytopeData_.begin());
             if (polytopeEdgeCount_ > 0) {
                 polytope_.write(polytopeData_.data(), polytopeData_.size() * sizeof(float));
@@ -632,7 +637,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         const FourSurfaceGrid surfaceGrid = fourSurfaceGrid(surfaceShape, surface4.pointBudget);
         const FourSurfaceGrid surfaceSkin = fourSurfaceSkinGrid(surface4.surface);
         if (sectionMode || fourSurfaceMode) {
-            std::array<float, 24> palette{};
+            std::array<float, 28> palette{};
             for (std::size_t i = 0; i < 5; ++i) {
                 const auto& color = state_.palette.colors[i % state_.palette.colors.size()];
                 std::copy(color.begin(), color.end(), palette.begin() + static_cast<std::ptrdiff_t>(4 * i));
@@ -641,6 +646,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             palette[21] = static_cast<float>(surface4.pulseWaves);
             palette[22] = static_cast<float>(surface4.powerQ);
             palette[23] = static_cast<float>(surface4.fibres);
+            palette[24] = surface4.mobius;
+            palette[25] = surface4.mobiusRate;
             polytope_.write(palette.data(), sizeof(palette));
             // The figure's own edges are gone: rebuild them on return.
             polytopeKey_ = {-1, -1, -1};
@@ -893,7 +900,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 static_cast<float>(hopf.knotP),
                 loopCycles_,
                 static_cast<float>(hopf.knotQ),
-                0.0F,
+                hopf.mobius,
                 hopf.zoom,
             };
         } else if (braid.geometryMode == 4) {

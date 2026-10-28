@@ -107,6 +107,24 @@ float sectionSpan() {
     return pc.shape.x * 1.2 * 1.25 / max(pc.loop.w, 0.05);
 }
 
+// A Moebius (conformal) map of the 3-sphere instead of a turn: the boost that
+// pushes every point towards a pole, by rapidity `amount`. Circles stay
+// circles and angles stay put, so the figure pours into the pole and out
+// again. The pole circles round and the push swells and eases with the phase
+// at `rate`, so loops close. Off the sphere a point keeps its distance from
+// the centre and moves with its direction.
+vec4 mobiusFlow(vec4 q, float amount, float rate) {
+    float r = length(q);
+    if (amount == 0.0 || r < 1e-6) return q;
+    float phase = timePhase(rate);
+    vec4 pole = normalize(vec4(0.8 * cos(phase), 0.8 * sin(phase), 0.3, 0.5));
+    float k = tanh(amount * (0.55 + 0.45 * sin(2.0 * phase)));
+    vec4 x = q / r;
+    float along = dot(x, pole);
+    float d = 1.0 + k * along;
+    return r * ((x - along * pole) * sqrt(1.0 - k * k) + (along + k) * pole) / d;
+}
+
 // Defined in polytope.glsl, which only the vertex shaders include.
 float polytopeSpan();
 
@@ -313,7 +331,7 @@ vec3 roundedCubeNormal(vec3 p) {
 // along a fibre, around its tube, pixel radius, fibres per torus; look.w =
 // tori; wave = innermost and outermost latitude, light flow rate, fibre drift
 // rate; motion.x = spin rate, motion.y = torus drawn, motion.z = breathing,
-// motion.w = knot p; loop.y = knot q.
+// motion.w = knot p; loop.y = knot q, loop.z = Moebius flow.
 //
 // With p, q other than 1, 1 the circles become (p, q) torus knots: the orbits
 // of t -> (e^(i p t) z1, e^(i q t) z2), the Seifert fibration of the 3-sphere,
@@ -366,6 +384,7 @@ vec3 hopfPoint(float t, float torus, float fiber) {
     float tumble = pc.shape.z * sin(timePhase(pc.shape.w));
     float c = cos(tumble), s = sin(tumble);
     q = vec4(c * q.x - s * q.w, q.y, q.z, s * q.x + c * q.w);
+    q = mobiusFlow(q, pc.loop.z, 1.0);
     vec3 p = q.xyz / max(1.0 - q.w, 1e-4);
     float spin = timePhase(pc.motion.x);
     p.xz = mat2(cos(spin), sin(spin), -sin(spin), cos(spin)) * p.xz;
