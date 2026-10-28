@@ -25,9 +25,10 @@ enum class Polytope4D : int {
     ThreeOrthoplexes,    // the three 16-cells hidden in a 24-cell
     NestedTesseracts,    // a tesseract inside a tesseract
     DualTwentyFourCells, // a 24-cell with its dual
+    TorusKnot,           // (p, q) torus knot on the Clifford torus
 };
 
-inline constexpr int polytope4DCount = 11;
+inline constexpr int polytope4DCount = 12;
 
 using Vec4d = std::array<double, 4>;
 
@@ -215,6 +216,22 @@ inline void addDuoprism(std::vector<Edge4D>& edges, const int p, const int q) {
     }
 }
 
+// A (p, q) torus knot on the Clifford torus of the unit 3-sphere, as a chain of
+// short segments. With gcd(p, q) > 1 it falls into a link of several loops.
+inline void addTorusKnot(std::vector<Edge4D>& edges, const int p, const int q) {
+    constexpr double tau = 6.28318530717958647692;
+    constexpr int segments = 360;
+    const double r = 1.0 / std::sqrt(2.0);
+    const auto point = [&](const int i) {
+        const double t = tau * i / segments;
+        return Vec4d{r * std::cos(p * t), r * std::sin(p * t), r * std::cos(q * t),
+                     r * std::sin(q * t)};
+    };
+    for (int i = 0; i < segments; ++i) {
+        edges.push_back({point(i), point((i + 1) % segments), 0, 0});
+    }
+}
+
 // Edges parallel in 4D share a class; the classes are numbered as found.
 inline void classifyDirections(std::vector<Edge4D>& edges) {
     std::vector<Vec4d> classes;
@@ -308,6 +325,9 @@ inline void classifyDirections(std::vector<Edge4D>& edges) {
         addPolytope(edges, dual, 1, 1.0);
         break;
     }
+    case Polytope4D::TorusKnot:
+        addTorusKnot(edges, std::clamp(p, 1, 32), std::clamp(q, 1, 32));
+        break;
     }
     classifyDirections(edges);
     return edges;

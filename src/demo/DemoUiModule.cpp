@@ -189,13 +189,19 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                         "600-cell",           "120-cell",
                                         "Duoprism",           "Tesseract + 16-cell",
                                         "Three 16-cells",     "Tesseract in tesseract",
-                                        "24-cell + dual"};
+                                        "24-cell + dual",     "Torus knot"};
         static_assert(shapeNames.size() == polytope4DCount);
         polytope.shape = std::clamp(polytope.shape, 0, polytope4DCount - 1);
         ImGui::Combo("Figure", &polytope.shape, shapeNames.data(), polytope4DCount);
         if (polytope.shape == static_cast<int>(Polytope4D::Duoprism)) {
             ImGui::SliderInt("First polygon", &polytope.duoprismP, 3, 32);
             ImGui::SliderInt("Second polygon", &polytope.duoprismQ, 3, 32);
+        } else if (polytope.shape == static_cast<int>(Polytope4D::TorusKnot)) {
+            ImGui::SliderInt("Turns one way (p)", &polytope.duoprismP, 1, 16);
+            ImGui::SliderInt("Turns other way (q)", &polytope.duoprismQ, 1, 16);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Coprime p and q make one knot, otherwise a link of loops.");
+            }
         }
         constexpr std::array colorNames{"4D depth", "Parts", "4D directions",
                                         "Parts shaded by depth"};
@@ -213,11 +219,30 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::BeginDisabled(polytope.slice <= 0.0F);
         ImGui::SliderFloat("Slice width", &polytope.sliceWidth, 0.02F, 0.5F, "%.2f");
         ImGui::EndDisabled();
-        ImGui::Checkbox("Bend edges onto the 3-sphere", &polytope.bentEdges);
+        ImGui::SeparatorText("Curves");
+        ImGui::SliderFloat("Edge bend", &polytope.edgeBend, -1.5F, 2.5F, "%.2f");
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Great-circle edges; with camera distance 1 this is the "
-                              "stereographic projection.");
+            ImGui::SetTooltip("0 straight, 1 great circles on the 3-sphere (stereographic at "
+                              "camera distance 1), more bulges out, below 0 caves in.");
         }
+        ImGui::SliderFloat("Coil", &polytope.coil, 0.0F, 0.4F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Edges wind around themselves through the fourth dimension.");
+        }
+        ImGui::BeginDisabled(polytope.coil <= 0.0F);
+        ImGui::SliderFloat("Coil turns", &polytope.coilTurns, 0.5F, 8.0F, "%.1f");
+        ImGui::SliderFloat("Coil flow", &polytope.coilFlow, -4.0F, 4.0F, "%.1f");
+        ImGui::EndDisabled();
+        ImGui::Checkbox("4D noise", &polytope.noise);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("A drifting 4D field displaces every point before the projection.");
+        }
+        ImGui::BeginDisabled(!polytope.noise);
+        ImGui::SliderFloat("Noise amount", &polytope.noiseAmount, 0.0F, 0.4F, "%.3f");
+        ImGui::SliderFloat("Noise scale", &polytope.noiseScale, 0.5F, 8.0F, "%.2f");
+        ImGui::SliderFloat("Noise speed", &polytope.noiseSpeed, -3.0F, 3.0F, "%.2f");
+        ImGui::EndDisabled();
+        ImGui::SeparatorText("Motion");
         ImGui::Checkbox("Parts turn against each other", &polytope.counterTurn);
         ImGui::Checkbox("Pause", &polytope.paused);
         ImGui::SliderFloat("Speed", &polytope.animationSpeed, 0.0F, 1.5F, "%.2f");
@@ -226,7 +251,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Ordinary turn (YZ)", &polytope.turnYZ, -3.0F, 3.0F, "%.2f");
         ImGui::SliderFloat("Spin", &polytope.spin, -2.0F, 2.0F, "%.2f");
         ImGui::SliderFloat("4D camera distance", &polytope.cameraDistance,
-                           polytope.bentEdges ? 1.0F : 1.3F, 8.0F, "%.2f");
+                           polytope.edgeBend > 0.5F ? 1.0F : 1.3F, 8.0F, "%.2f");
         ImGui::SliderFloat("Size", &polytope.size, 0.2F, 1.5F, "%.2f");
         ImGui::SliderFloat("Tube radius", &polytope.tubeRadius, 0.003F, 0.06F, "%.3f");
         ImGui::SliderFloat("Light flow", &polytope.lightFlow, -6.0F, 6.0F, "%.1f");

@@ -186,7 +186,7 @@ void main() {
 
         // Colour: 0 by 4D depth, 1 by part, 2 by 4D direction, 3 part shaded by depth.
         int colorMode = int(pc.motion.y + 0.5);
-        vec3 own = polytopeEdges[3 * edge + 2].rgb;
+        vec3 own = polytopeEdge(edge, 2).rgb;
         float depth = smoothstep(-0.9, 0.9, w);
         vec3 tint = colorMode == 0 ? mix(pc.wave.rgb, pc.style.rgb, depth)
                   : colorMode == 3 ? own * mix(0.30, 1.25, depth)

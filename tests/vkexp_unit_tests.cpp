@@ -656,7 +656,7 @@ void testTentaclePatch() {
 void testPolytopes() {
     using vkexp::Polytope4D;
     // Edge counts of the regular polytopes, the duoprism and the compounds.
-    const std::array<std::pair<Polytope4D, std::size_t>, 11> counts{{
+    const std::array<std::pair<Polytope4D, std::size_t>, 12> counts{{
         {Polytope4D::Simplex, 10},
         {Polytope4D::Tesseract, 32},
         {Polytope4D::Orthoplex, 24},
@@ -668,6 +668,7 @@ void testPolytopes() {
         {Polytope4D::ThreeOrthoplexes, 72},
         {Polytope4D::NestedTesseracts, 64},
         {Polytope4D::DualTwentyFourCells, 192},
+        {Polytope4D::TorusKnot, 360},
     }};
     for (const auto& [shape, expected] : counts) {
         const auto edges = vkexp::polytopeEdges(shape, 6, 6);

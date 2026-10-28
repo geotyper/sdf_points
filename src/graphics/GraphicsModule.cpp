@@ -90,8 +90,9 @@ void GraphicsModule::onAttach(AppContext& context) {
     effectsWrite.descriptorCount = 1;
     effectsWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     effectsWrite.pBufferInfo = &effectsInfo;
-    // Room for the largest figure: the 120-cell's 1200 edges, three vec4 each.
-    constexpr VkDeviceSize polytopeBytes = 2048U * 12U * sizeof(float);
+    // Two vec4 of shaping, then room for the largest figure: the 120-cell's
+    // 1200 edges, three vec4 each.
+    constexpr VkDeviceSize polytopeBytes = (8U + 2048U * 12U) * sizeof(float);
     polytope_.create(context.vulkan.physicalDevice(), device,
                      BufferResourceConfig{polytopeBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
@@ -470,11 +471,11 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 const auto edges = polytopeEdges(static_cast<Polytope4D>(polytope.shape),
                                                  polytope.duoprismP, polytope.duoprismQ);
                 polytopeEdgeCount_ = static_cast<int>(std::min<std::size_t>(edges.size(), 2048U));
-                polytopeData_.assign(static_cast<std::size_t>(polytopeEdgeCount_) * 12U, 0.0F);
+                polytopeData_.assign(8U + static_cast<std::size_t>(polytopeEdgeCount_) * 12U, 0.0F);
                 polytopeClasses_.resize(static_cast<std::size_t>(polytopeEdgeCount_));
                 for (std::size_t edge = 0; edge < polytopeClasses_.size(); ++edge) {
                     const auto& source = edges[edge];
-                    float* out = polytopeData_.data() + edge * 12U;
+                    float* out = polytopeData_.data() + 8U + edge * 12U;
                     for (std::size_t i = 0; i < 4; ++i) {
                         out[i] = static_cast<float>(source.start[i]);
                         out[4 + i] = static_cast<float>(source.end[i]);
@@ -489,10 +490,19 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             for (std::size_t edge = 0; edge < polytopeClasses_.size(); ++edge) {
                 const auto group = static_cast<std::size_t>(polytopeClasses_[edge][byDirection ? 1 : 0]);
                 const auto& color = colors[group % colors.size()];
-                std::copy(color.begin(), color.end(), polytopeData_.begin() +
-                                                          static_cast<std::ptrdiff_t>(edge * 12U + 8U));
+                std::copy(color.begin(), color.end(),
+                          polytopeData_.begin() + static_cast<std::ptrdiff_t>(8U + edge * 12U + 8U));
             }
-            if (!polytopeData_.empty()) {
+            const std::array shaping{polytope.edgeBend,
+                                     polytope.coil,
+                                     polytope.coilTurns,
+                                     polytope.coilFlow,
+                                     polytope.noise ? polytope.noiseAmount : 0.0F,
+                                     polytope.noiseScale,
+                                     polytope.noiseSpeed,
+                                     0.0F};
+            std::copy(shaping.begin(), shaping.end(), polytopeData_.begin());
+            if (polytopeEdgeCount_ > 0) {
                 polytope_.write(polytopeData_.data(), polytopeData_.size() * sizeof(float));
             }
             polytopeAlong = polytopePointsAlong(polytope.pointBudget, polytopeEdgeCount_,
@@ -542,8 +552,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 0.0F,
                 polytope.size,
                 polytope.tubeRadius,
-                polytope.bentEdges ? polytope.cameraDistance
-                                   : std::max(polytope.cameraDistance, 1.3F),
+                polytope.edgeBend > 0.5F ? polytope.cameraDistance
+                                         : std::max(polytope.cameraDistance, 1.3F),
                 polytope.turnXW,
                 static_cast<float>(polytopeAlong),
                 static_cast<float>(polytope.pointsAround),
@@ -567,7 +577,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 polytope.sliceWidth,
                 loopCycles_,
                 polytope.lightStrength,
-                static_cast<float>((polytope.bentEdges ? 1 : 0) | (polytope.counterTurn ? 2 : 0)),
+                polytope.counterTurn ? 2.0F : 0.0F,
                 polytope.lightFlow,
             };
         } else if (braid.geometryMode == 18) {

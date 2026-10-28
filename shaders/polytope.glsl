@@ -1,13 +1,32 @@
-// 4D polytopes and compounds. The edges come from the CPU, three vec4 each:
-// start, end, (colour, part). Push constants: shape = size, tube radius, 4D
+// 4D polytopes and compounds. The CPU writes two vec4 of shaping first:
+// (edge bend, coil size, coil turns, coil flow rate), (4D noise amount, noise
+// scale, noise rate, 0); then the edges, three vec4 each: start, end,
+// (colour, part). Push constants: shape = size, tube radius, 4D
 // camera distance, XW turn rate; points = samples along an edge, around its
 // tube, pixel radius, edge count; look.w = YZ turn rate; style.rgb = near
 // colour; wave = far colour + spin rate; motion = ZW turn rate, colour mode,
-// slice glow, slice width; loop = cycles, light strength, flags (1: edges
-// bent onto the 3-sphere, 2: parts turn against each other), light flow rate.
+// slice glow, slice width; loop = cycles, light strength, flags (2: parts
+// turn against each other), light flow rate.
 layout(set = 0, binding = 2, std430) readonly buffer PolytopeEdges {
-    vec4 polytopeEdges[];
+    vec4 polytopeData[];
 };
+
+vec4 polytopeEdge(int edge, int slot) {
+    return polytopeData[2 + 3 * edge + slot];
+}
+
+// Smooth 4D displacement: crossed sine waves in all four coordinates, drifting
+// with the flow phase so a loop closes. Applied after the turn, so the figure
+// moves through a field that stays put.
+vec4 polytopeNoise(vec4 q) {
+    vec4 p = q * polytopeData[1].y;
+    float first = timePhase(polytopeData[1].z), second = timePhase(2.0 * polytopeData[1].z);
+    vec4 n = vec4(sin(1.3 * p.y + 0.7 * p.z + first) + 0.5 * sin(1.7 * p.w - 0.5 * p.x + second),
+                  sin(1.1 * p.z - 0.9 * p.w + second) + 0.5 * sin(1.9 * p.x + 0.3 * p.y - first),
+                  sin(1.5 * p.w + 0.8 * p.x - first) + 0.5 * sin(1.4 * p.y - 0.6 * p.z + second),
+                  sin(1.2 * p.x - 1.0 * p.y + second) + 0.5 * sin(1.6 * p.z + 0.4 * p.w + first));
+    return n / 1.5;
+}
 
 int polytopeFlags() {
     return int(pc.loop.z + 0.5);
@@ -39,17 +58,47 @@ float polytopeSpan() {
         float angle = 0.5 * PI * float(i) / 32.0;
         reach = max(reach, cos(angle) * polytopeScale(sin(angle)));
     }
-    return pc.shape.x * min(reach, 3.0) * 1.08;
+    // Bulging edges, coils and noise all reach a little further out.
+    vec4 shaping = polytopeData[0];
+    float growth = 1.0 + 0.3 * max(shaping.x - 1.0, 0.0) + 0.5 * shaping.y + polytopeData[1].x;
+    return pc.shape.x * min(reach * growth, 3.0) * 1.08;
 }
 
 vec4 polytopePoint4(int edge, float along) {
-    float part = polytopeEdges[3 * edge + 2].w;
-    vec4 start = polytopeTurn(polytopeEdges[3 * edge], part);
-    vec4 end = polytopeTurn(polytopeEdges[3 * edge + 1], part);
+    vec4 start = polytopeEdge(edge, 0), end = polytopeEdge(edge, 1);
+    float part = polytopeEdge(edge, 2).w;
+    vec4 shaping = polytopeData[0];
     vec4 q = mix(start, end, along);
-    if ((polytopeFlags() & 1) != 0) {
-        // Along the great circle on the part's own 3-sphere.
-        q = normalize(q) * length(start);
+    // Bend: 0 straight, 1 along the great circle on the part's own 3-sphere,
+    // beyond that bulging out, below 0 caving in.
+    q *= mix(1.0, length(start) / max(length(q), 1e-4), shaping.x);
+    if (shaping.y > 0.0) {
+        // Coil: the edge winds around its chord in the two 4D directions
+        // across it, pinned at both vertices so the edges still meet.
+        vec4 chord = end - start;
+        float span = length(chord);
+        vec4 direction = chord / span;
+        vec4 middle = 0.5 * (start + end);
+        vec4 across = middle - direction * dot(middle, direction);
+        across = dot(across, across) > 1e-8 ? normalize(across) : vec4(0.0, 0.0, 0.0, 1.0);
+        vec4 third = vec4(1.0, 0.0, 0.0, 0.0);
+        float best = 2.0;
+        for (int axis = 0; axis < 4; ++axis) {
+            vec4 basis = vec4(0.0);
+            basis[axis] = 1.0;
+            float overlap = abs(dot(basis, direction)) + abs(dot(basis, across));
+            if (overlap < best) {
+                best = overlap;
+                third = basis;
+            }
+        }
+        third = normalize(third - direction * dot(third, direction) - across * dot(third, across));
+        float angle = TAU * shaping.z * along - timePhase(shaping.w);
+        q += shaping.y * span * sin(PI * along) * (across * cos(angle) + third * sin(angle));
+    }
+    q = polytopeTurn(q, part);
+    if (polytopeData[1].x > 0.0) {
+        q += polytopeData[1].x * polytopeNoise(q);
     }
     return q;
 }
@@ -61,9 +110,9 @@ vec3 polytopeProject(vec4 q) {
     return p;
 }
 
-// Tube frame along an edge. A bent edge is a circle arc, whose curvature
-// points at its centre; one decided at the edge's middle for the whole edge,
-// so the frame never switches along it.
+// Tube frame along an edge. One reference direction serves the whole edge so
+// the frame never switches along it: across the plane of its ends and middle
+// when it bends (a circle arc always runs square to it), else a fixed side.
 void polytopeFrame(int edge, float along, out vec3 center, out vec3 normal, out vec3 binormal,
                    out float w) {
     const float step = 0.01;
@@ -79,16 +128,14 @@ void polytopeFrame(int edge, float along, out vec3 center, out vec3 normal, out 
     vec3 fixedSide = cross(chord, abs(chord.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0));
     vec3 middle = polytopeProject(polytopePoint4(edge, 0.5));
     vec3 sag = middle - 0.5 * (first + last);
-    bool bent = (polytopeFlags() & 1) != 0 && length(sag) > 1e-3 * length(last - first);
-    vec3 reference;
-    if (bent) {
-        vec3 bend = ahead + behind - 2.0 * center;
-        reference = bend - tangent * dot(bend, tangent);
-        if (dot(reference, reference) < 1e-14) reference = sag;
-    } else {
-        reference = cross(fixedSide, tangent);
-    }
-    normal = normalize(reference - tangent * dot(reference, tangent));
+    vec3 plane = cross(chord, sag);
+    vec3 reference = dot(sag, sag) > 1e-6 * dot(last - first, last - first) && dot(plane, plane) > 1e-12
+                         ? normalize(plane)
+                         : normalize(fixedSide);
+    vec3 side = cross(reference, tangent);
+    // A coiled or noisy edge can turn along the reference for a moment.
+    if (dot(side, side) < 1e-6) side = cross(normalize(fixedSide + 0.5 * chord), tangent);
+    normal = normalize(side);
     binormal = cross(tangent, normal);
 }
 

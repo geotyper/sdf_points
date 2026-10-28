@@ -162,8 +162,18 @@ struct PolytopeSettings {
     int duoprismP{6};
     int duoprismQ{12};
     int colorMode{0}; // 0 4D depth, 1 parts, 2 4D directions, 3 parts shaded by depth
-    bool bentEdges{false};  // edges as great circles on the 3-sphere
     bool counterTurn{true}; // parts of a compound turn against each other
+    // Curved edges: 0 straight, 1 great circles on the 3-sphere, beyond that
+    // bulging out, below 0 caving in.
+    float edgeBend{0.0F};
+    float coil{0.0F};      // edges winding around their chord in 4D, share of edge length
+    float coilTurns{3.0F};
+    float coilFlow{1.0F};
+    // 4D noise displacing every point before the projection.
+    bool noise{false};
+    float noiseAmount{0.08F};
+    float noiseScale{2.5F};
+    float noiseSpeed{1.0F};
     float animationSpeed{0.30F};
     float turnXW{1.0F};
     float turnYZ{0.0F};

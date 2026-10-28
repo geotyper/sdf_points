@@ -217,11 +217,20 @@ inside a tesseract and a 24-cell with its dual. The edges are built on the CPU a
 by the shaders from a storage buffer. Colour shows the fourth dimension: by 4D depth,
 by part of a compound (or ring of a duoprism), by 4D direction (edges parallel in 4D
 share a colour), or by part shaded with depth. **Slice glow** sweeps a hyperplane
-through the figure and lights up the 3D cross-section it cuts. **Bend edges onto the
-3-sphere** turns the edges into great circles, and at 4D camera distance 1 the view
-becomes the stereographic projection. Parts of a compound can turn against each other;
+through the figure and lights up the 3D cross-section it cuts. With edges bent onto
+the 3-sphere and the 4D camera at distance 1 the view becomes the stereographic
+projection. Parts of a compound can turn against each other;
 the figure turns in the XW and ZW planes and an ordinary YZ plane. Launch it with
 `--preset polytopes-4d`.
+
+The edges need not be straight. **Edge bend** runs from caved-in edges through straight
+ones (0) and great circles on the 3-sphere (1) to bulging arcs; **Coil** winds every
+edge around itself through the fourth dimension, pinned at its vertices, and the coils
+can flow. **Torus knot** is a (p, q) knot on the Clifford torus, a closed curve on the
+3-sphere that becomes a knot in projection. **4D noise** is a separate option: a
+drifting field of crossed sine waves displaces every point in 4D before the projection,
+so the figure ripples as it moves through it; amount, scale and speed are adjustable
+and loops stay seamless.
 
 **Effects** is a separate window whose settings apply to the points of every geometry.
 **Drift** moves neighbouring points together in a slow flow and **Jitter** makes each
