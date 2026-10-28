@@ -1,6 +1,7 @@
-// 4D polytopes and compounds. The CPU writes two vec4 of shaping first:
+// 4D polytopes and compounds. The CPU writes three vec4 of shaping first:
 // (edge bend, coil size, coil turns, coil flow rate), (4D noise amount, noise
-// scale, noise rate, 0); then the edges, three vec4 each: start, end,
+// scale, noise rate, 0), (coil wave: 0 steady, 1 along edges, 2 across the
+// figure; wave length, wave rate, 0); then the edges, three vec4 each: start, end,
 // (colour, part). Push constants: shape = size, tube radius, 4D
 // camera distance, XW turn rate; points = samples along an edge, around its
 // tube, pixel radius, edge count; look.w = YZ turn rate; style.rgb = near
@@ -12,7 +13,7 @@ layout(set = 0, binding = 2, std430) readonly buffer PolytopeEdges {
 };
 
 vec4 polytopeEdge(int edge, int slot) {
-    return polytopeData[2 + 3 * edge + slot];
+    return polytopeData[3 + 3 * edge + slot];
 }
 
 // Smooth 4D displacement: crossed sine waves in all four coordinates, drifting
@@ -64,6 +65,19 @@ float polytopeSpan() {
     return pc.shape.x * min(reach * growth, 3.0) * 1.08;
 }
 
+// Coil size as a wave runs through it: crests travel along every edge from
+// its start, or as fronts across the figure along a fixed 4D direction of its
+// own frame, so the wave turns with it. 1 when the coil is steady.
+float polytopeCoilWave(vec4 start, vec4 end, float along) {
+    vec4 wave = polytopeData[2];
+    if (wave.x < 0.5) return 1.0;
+    float position = wave.x < 1.5
+                         ? along
+                         : dot(mix(start, end, along), normalize(vec4(0.8, 0.5, 0.3, 0.6)));
+    float crest = 0.5 + 0.5 * cos(TAU * position / max(wave.y, 0.05) - timePhase(wave.z));
+    return crest * crest;
+}
+
 vec4 polytopePoint4(int edge, float along) {
     vec4 start = polytopeEdge(edge, 0), end = polytopeEdge(edge, 1);
     float part = polytopeEdge(edge, 2).w;
@@ -94,7 +108,8 @@ vec4 polytopePoint4(int edge, float along) {
         }
         third = normalize(third - direction * dot(third, direction) - across * dot(third, across));
         float angle = TAU * shaping.z * along - timePhase(shaping.w);
-        q += shaping.y * span * sin(PI * along) * (across * cos(angle) + third * sin(angle));
+        q += shaping.y * span * sin(PI * along) * polytopeCoilWave(start, end, along) *
+             (across * cos(angle) + third * sin(angle));
     }
     q = polytopeTurn(q, part);
     if (polytopeData[1].x > 0.0) {

@@ -92,7 +92,7 @@ void GraphicsModule::onAttach(AppContext& context) {
     effectsWrite.pBufferInfo = &effectsInfo;
     // Two vec4 of shaping, then room for the largest figure: the 120-cell's
     // 1200 edges, three vec4 each.
-    constexpr VkDeviceSize polytopeBytes = (8U + 2048U * 12U) * sizeof(float);
+    constexpr VkDeviceSize polytopeBytes = (12U + 2048U * 12U) * sizeof(float);
     polytope_.create(context.vulkan.physicalDevice(), device,
                      BufferResourceConfig{polytopeBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
@@ -471,11 +471,11 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 const auto edges = polytopeEdges(static_cast<Polytope4D>(polytope.shape),
                                                  polytope.duoprismP, polytope.duoprismQ);
                 polytopeEdgeCount_ = static_cast<int>(std::min<std::size_t>(edges.size(), 2048U));
-                polytopeData_.assign(8U + static_cast<std::size_t>(polytopeEdgeCount_) * 12U, 0.0F);
+                polytopeData_.assign(12U + static_cast<std::size_t>(polytopeEdgeCount_) * 12U, 0.0F);
                 polytopeClasses_.resize(static_cast<std::size_t>(polytopeEdgeCount_));
                 for (std::size_t edge = 0; edge < polytopeClasses_.size(); ++edge) {
                     const auto& source = edges[edge];
-                    float* out = polytopeData_.data() + 8U + edge * 12U;
+                    float* out = polytopeData_.data() + 12U + edge * 12U;
                     for (std::size_t i = 0; i < 4; ++i) {
                         out[i] = static_cast<float>(source.start[i]);
                         out[4 + i] = static_cast<float>(source.end[i]);
@@ -491,7 +491,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 const auto group = static_cast<std::size_t>(polytopeClasses_[edge][byDirection ? 1 : 0]);
                 const auto& color = colors[group % colors.size()];
                 std::copy(color.begin(), color.end(),
-                          polytopeData_.begin() + static_cast<std::ptrdiff_t>(8U + edge * 12U + 8U));
+                          polytopeData_.begin() + static_cast<std::ptrdiff_t>(12U + edge * 12U + 8U));
             }
             const std::array shaping{polytope.edgeBend,
                                      polytope.coil,
@@ -500,6 +500,10 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                                      polytope.noise ? polytope.noiseAmount : 0.0F,
                                      polytope.noiseScale,
                                      polytope.noiseSpeed,
+                                     0.0F,
+                                     static_cast<float>(polytope.coilWave),
+                                     polytope.coilWaveLength,
+                                     polytope.coilWaveSpeed,
                                      0.0F};
             std::copy(shaping.begin(), shaping.end(), polytopeData_.begin());
             if (polytopeEdgeCount_ > 0) {

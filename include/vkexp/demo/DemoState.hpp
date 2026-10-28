@@ -169,6 +169,9 @@ struct PolytopeSettings {
     float coil{0.0F};      // edges winding around their chord in 4D, share of edge length
     float coilTurns{3.0F};
     float coilFlow{1.0F};
+    int coilWave{0}; // 0 steady, 1 waves along every edge, 2 fronts across the figure
+    float coilWaveLength{0.5F};
+    float coilWaveSpeed{1.0F};
     // 4D noise displacing every point before the projection.
     bool noise{false};
     float noiseAmount{0.08F};

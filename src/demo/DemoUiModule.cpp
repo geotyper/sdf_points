@@ -232,6 +232,16 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::BeginDisabled(polytope.coil <= 0.0F);
         ImGui::SliderFloat("Coil turns", &polytope.coilTurns, 0.5F, 8.0F, "%.1f");
         ImGui::SliderFloat("Coil flow", &polytope.coilFlow, -4.0F, 4.0F, "%.1f");
+        const char* coilWaves[] = {"Steady", "Along edges", "Across the figure"};
+        ImGui::Combo("Coil wave", &polytope.coilWave, coilWaves, IM_ARRAYSIZE(coilWaves));
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("The coil swells and shrinks in waves that run along every "
+                              "edge, or sweep across the whole figure.");
+        }
+        ImGui::BeginDisabled(polytope.coilWave == 0);
+        ImGui::SliderFloat("Wave length", &polytope.coilWaveLength, 0.1F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Wave speed", &polytope.coilWaveSpeed, -4.0F, 4.0F, "%.1f");
+        ImGui::EndDisabled();
         ImGui::EndDisabled();
         ImGui::Checkbox("4D noise", &polytope.noise);
         if (ImGui::IsItemHovered()) {
