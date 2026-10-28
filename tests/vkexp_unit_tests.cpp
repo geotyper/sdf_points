@@ -7,6 +7,7 @@
 #include "vkexp/demo/LoopPlan.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/PointLattice.hpp"
+#include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/presets/PresetRegistry.hpp"
 #include "vkexp/profiling/CpuProfiler.hpp"
@@ -72,7 +73,7 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 18, "Built-in preset count");
+    check(registry.all().size() == 19, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
     check(registry.require("nested-spheres").initialGeometryMode == 4,
@@ -646,9 +647,50 @@ void testTentaclePatch() {
     check(registry.require("tesseract").initialGeometryMode == 18, "Tesseract initial geometry");
     check(vkexp::loopDriverLabel(18, vkexp::LoopDriver::Flow) == "Tesseract turns",
           "Tesseract loop label");
+    check(registry.require("polytopes-4d").initialGeometryMode == 19, "4D polytopes geometry");
     const vkexp::BumpyTorusSettings chain = vkexp::torusChainDefaults();
     check(chain.tubeRadius <= vkexp::torusChainTubeLimit(chain),
           "Chain links fit through each other by default");
+}
+
+void testPolytopes() {
+    using vkexp::Polytope4D;
+    // Edge counts of the regular polytopes, the duoprism and the compounds.
+    const std::array<std::pair<Polytope4D, std::size_t>, 11> counts{{
+        {Polytope4D::Simplex, 10},
+        {Polytope4D::Tesseract, 32},
+        {Polytope4D::Orthoplex, 24},
+        {Polytope4D::TwentyFourCell, 96},
+        {Polytope4D::SixHundredCell, 720},
+        {Polytope4D::HundredTwentyCell, 1200},
+        {Polytope4D::Duoprism, 72},
+        {Polytope4D::TesseractOrthoplex, 56},
+        {Polytope4D::ThreeOrthoplexes, 72},
+        {Polytope4D::NestedTesseracts, 64},
+        {Polytope4D::DualTwentyFourCells, 192},
+    }};
+    for (const auto& [shape, expected] : counts) {
+        const auto edges = vkexp::polytopeEdges(shape, 6, 6);
+        const auto name = std::to_string(static_cast<int>(shape));
+        check(edges.size() == expected, "Polytope edge count " + name);
+        double reach = 0.0;
+        for (const auto& edge : edges) {
+            reach = std::max(reach, vkexp::polytope_detail::norm(edge.start));
+        }
+        check(std::abs(reach - 1.0) < 1e-9, "Polytope on the unit 3-sphere " + name);
+    }
+    const auto tesseract = vkexp::polytopeEdges(Polytope4D::Tesseract);
+    int directions = 0;
+    for (const auto& edge : tesseract) {
+        directions = std::max(directions, edge.direction + 1);
+    }
+    check(directions == 4, "Tesseract edges run in four directions");
+    const auto three = vkexp::polytopeEdges(Polytope4D::ThreeOrthoplexes);
+    check(std::count_if(three.begin(), three.end(), [](const auto& e) { return e.part == 2; }) == 24,
+          "Each of the three 16-cells keeps its 24 edges");
+    check(vkexp::polytopePointsAlong(160000, 1200, 6) == 22 &&
+              vkexp::polytopePointsAlong(160000, 10, 6) == 400,
+          "Point budget spreads over the edges");
 }
 
 } // namespace
@@ -670,5 +712,6 @@ int main() {
     testLoopPlan();
     testClosedLattice();
     testTentaclePatch();
+    testPolytopes();
     return failures == 0 ? 0 : 1;
 }

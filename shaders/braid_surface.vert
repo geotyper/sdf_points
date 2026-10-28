@@ -1,6 +1,7 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 #include "braid_common.glsl"
+#include "polytope.glsl"
 
 const ivec2 corners[6] = ivec2[](ivec2(0, 0), ivec2(1, 0), ivec2(0, 1),
                                ivec2(0, 1), ivec2(1, 0), ivec2(1, 1));
@@ -48,6 +49,32 @@ void main() {
             }
         }
         gl_Position = projectPoint(position);
+        return;
+    }
+    if (polytopeMode()) {
+        // One instance per edge: a row per point sample along it, 12 around.
+        const int around = 12;
+        int along = max(int(pc.points.x + 0.5), 1);
+        int row = cell / around;
+        if (row >= along) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            return;
+        }
+        // Rows near the 4D camera are dropped whole, decided at their ends.
+        float wStart = polytopePoint4(gl_InstanceIndex, float(row) / float(along)).w;
+        float wEnd = polytopePoint4(gl_InstanceIndex, float(row + 1) / float(along)).w;
+        if (polytopeTooClose(wStart) || polytopeTooClose(wEnd)) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            return;
+        }
+        ivec2 corner = ivec2(row, cell % around) + corners[gl_VertexIndex % 6];
+        vec3 center, normal, binormal;
+        float w;
+        polytopeFrame(gl_InstanceIndex, float(corner.x) / float(along), center, normal, binormal, w);
+        float angle = TAU * float(corner.y) / float(around);
+        // A hair inside the points, so they sit on the skin and not under it.
+        gl_Position = projectPoint(center + 0.97 * pc.shape.y * polytopeScale(w)
+                                   * (normal * cos(angle) + binormal * sin(angle)));
         return;
     }
     if (tesseractMode()) {

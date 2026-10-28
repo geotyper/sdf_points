@@ -1,6 +1,7 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 #include "braid_common.glsl"
+#include "polytope.glsl"
 
 layout(location = 0) out vec2 disc;
 layout(location = 1) flat out vec3 pointColor;
@@ -152,6 +153,61 @@ void main() {
 
         vec4 clip = effectClip(position, normal, radiusPixels);
         clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy * clip.w;
+        gl_Position = clip;
+        disc *= (radiusPixels + 0.65) / radiusPixels;
+        return;
+    }
+
+    if (polytopeMode()) {
+        int along = max(int(pc.points.x + 0.5), 1), around = max(int(pc.points.y + 0.5), 1);
+        int edge = gl_InstanceIndex / (along * around);
+        int sampleIndex = gl_InstanceIndex % (along * around);
+        int row = sampleIndex / around, column = sampleIndex % around;
+        float s = (float(row) + 0.5) / float(along);
+        float v = TAU * (float(column) + 0.5 * float(row % 2)) / float(around);
+        vec3 center, normal, binormal;
+        float w;
+        polytopeFrame(edge, s, center, normal, binormal, w);
+        if (polytopeTooClose(w)) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            pointColor = vec3(0.0);
+            pointFacing = 0.0;
+            return;
+        }
+        float magnification = polytopeScale(w);
+        vec3 outward = normal * cos(v) + binormal * sin(v);
+        vec3 position = center + pc.shape.y * magnification * outward;
+        vec3 viewNormal = toView(outward);
+        vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
+        float diffuse = max(dot(viewNormal, light), 0.0);
+        float illumination = 0.10 + 0.90 * pow(diffuse, 0.8);
+        float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
+                           * mix(0.36, 1.0, illumination) * clamp(sqrt(magnification), 0.5, 2.0);
+
+        // Colour: 0 by 4D depth, 1 by part, 2 by 4D direction, 3 part shaded by depth.
+        int colorMode = int(pc.motion.y + 0.5);
+        vec3 own = polytopeEdges[3 * edge + 2].rgb;
+        float depth = smoothstep(-0.9, 0.9, w);
+        vec3 tint = colorMode == 0 ? mix(pc.wave.rgb, pc.style.rgb, depth)
+                  : colorMode == 3 ? own * mix(0.30, 1.25, depth)
+                                   : own;
+        // A hyperplane w = const sweeps through the figure and lights up the
+        // 3D cross-section it cuts; the rest falls into shade.
+        if (pc.motion.z > 0.0) {
+            float level = 0.85 * sin(timePhase(1.0));
+            float distance = (w - level) / max(pc.motion.w, 1e-3);
+            float glow = exp(-distance * distance);
+            tint = tint * mix(1.0, 0.25 + 1.6 * glow, pc.motion.z) + 0.45 * pc.motion.z * glow;
+            radiusPixels *= 1.0 + 0.6 * pc.motion.z * glow;
+        }
+        float pulse = pow(0.5 + 0.5 * cos(TAU * s - timePhase(pc.loop.w)), 10.0);
+        tint = tint * (1.0 + pc.loop.y * pulse) + 0.3 * pc.loop.y * pulse;
+        radiusPixels = max(radiusPixels, 0.30);
+        pointColor = tint * illumination * pc.look.z;
+        pointFacing = smoothstep(-0.015, 0.025, viewNormal.z);
+
+        vec4 clip = effectClip(position, viewNormal, radiusPixels);
+        clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
         gl_Position = clip;
         disc *= (radiusPixels + 0.65) / radiusPixels;
         return;

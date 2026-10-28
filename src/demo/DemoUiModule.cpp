@@ -2,6 +2,7 @@
 
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
+#include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/profiling/Profiler.hpp"
 #include "vkexp/ui/ImGuiModule.hpp"
@@ -82,7 +83,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                        "Ridged torus",  "Ridged braid",    "Tentacle sphere",
                                        "Bumpy torus",   "Torus chain",     "Sphere eversion",
                                        "Arched sphere", "Nested cubes",    "Hopf fibration",
-                                       "Tesseract"};
+                                       "Tesseract",     "4D polytopes"};
     const auto geometryCount = static_cast<int>(geometryNames.size());
     braid.geometryMode = std::clamp(braid.geometryMode, 0, geometryCount - 1);
     if (ImGui::BeginCombo("Geometry",
@@ -97,7 +98,8 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             }
         };
         group("Braids", {0, 1, 2, 3, 10});
-        group("Spheres", {4, 16, 11, 15, 17, 18});
+        group("Spheres", {4, 16, 11, 15});
+        group("Four dimensions", {18, 19, 17});
         group("Eversion", {5, 14, 6, 7, 8, 9, 12, 13});
         ImGui::EndCombo();
     }
@@ -179,6 +181,77 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         }
         if (cubes.cubeCount > static_cast<int>(state_.palette.colors.size())) {
             ImGui::TextDisabled("The palette repeats after color 5.");
+        }
+    } else if (braid.geometryMode == 19) {
+        auto& polytope = state_.polytope;
+        constexpr std::array shapeNames{"5-cell (simplex)",   "Tesseract",
+                                        "16-cell",            "24-cell",
+                                        "600-cell",           "120-cell",
+                                        "Duoprism",           "Tesseract + 16-cell",
+                                        "Three 16-cells",     "Tesseract in tesseract",
+                                        "24-cell + dual"};
+        static_assert(shapeNames.size() == polytope4DCount);
+        polytope.shape = std::clamp(polytope.shape, 0, polytope4DCount - 1);
+        ImGui::Combo("Figure", &polytope.shape, shapeNames.data(), polytope4DCount);
+        if (polytope.shape == static_cast<int>(Polytope4D::Duoprism)) {
+            ImGui::SliderInt("First polygon", &polytope.duoprismP, 3, 32);
+            ImGui::SliderInt("Second polygon", &polytope.duoprismQ, 3, 32);
+        }
+        constexpr std::array colorNames{"4D depth", "Parts", "4D directions",
+                                        "Parts shaded by depth"};
+        ImGui::Combo("Colour by", &polytope.colorMode, colorNames.data(),
+                     static_cast<int>(colorNames.size()));
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Parts are the polytopes of a compound or the rings of a duoprism; "
+                              "directions group edges parallel in 4D.");
+        }
+        ImGui::SliderFloat("Slice glow", &polytope.slice, 0.0F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("A hyperplane sweeps through the figure and lights up the 3D "
+                              "cross-section it cuts.");
+        }
+        ImGui::BeginDisabled(polytope.slice <= 0.0F);
+        ImGui::SliderFloat("Slice width", &polytope.sliceWidth, 0.02F, 0.5F, "%.2f");
+        ImGui::EndDisabled();
+        ImGui::Checkbox("Bend edges onto the 3-sphere", &polytope.bentEdges);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Great-circle edges; with camera distance 1 this is the "
+                              "stereographic projection.");
+        }
+        ImGui::Checkbox("Parts turn against each other", &polytope.counterTurn);
+        ImGui::Checkbox("Pause", &polytope.paused);
+        ImGui::SliderFloat("Speed", &polytope.animationSpeed, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("4D turn (XW)", &polytope.turnXW, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("4D turn (ZW)", &polytope.turnZW, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Ordinary turn (YZ)", &polytope.turnYZ, -3.0F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Spin", &polytope.spin, -2.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("4D camera distance", &polytope.cameraDistance,
+                           polytope.bentEdges ? 1.0F : 1.3F, 8.0F, "%.2f");
+        ImGui::SliderFloat("Size", &polytope.size, 0.2F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Tube radius", &polytope.tubeRadius, 0.003F, 0.06F, "%.3f");
+        ImGui::SliderFloat("Light flow", &polytope.lightFlow, -6.0F, 6.0F, "%.1f");
+        ImGui::SliderFloat("Light strength", &polytope.lightStrength, 0.0F, 2.0F, "%.2f");
+        ImGui::SliderInt("Point budget", &polytope.pointBudget, 20000, 400000);
+        ImGui::SliderInt("Points around", &polytope.pointsAround, 3, 16);
+        ImGui::SliderFloat("Point radius (700px)", &polytope.pointSize, 0.6F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &polytope.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &polytope.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &polytope.tilt, -90.0F, 90.0F);
+        ImGui::ColorEdit3("Near color", polytope.nearColor.data());
+        ImGui::ColorEdit3("Far color", polytope.farColor.data());
+        if (ImGui::Button("Reset figure")) {
+            polytope = PolytopeSettings{};
+        }
+        ImGui::SeparatorText("Parts / directions palette");
+        for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::Text("Color %d", static_cast<int>(i + 1));
+            ImGui::SameLine();
+            ImGui::ColorEdit3("##Part color", state_.palette.colors[i].data());
+            ImGui::PopID();
+        }
+        if (ImGui::Button("Reset palette")) {
+            state_.palette.colors = StrandPalette{}.colors;
         }
     } else if (braid.geometryMode == 18) {
         auto& tesseract = state_.tesseract;

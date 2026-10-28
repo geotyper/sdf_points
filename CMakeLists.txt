@@ -83,6 +83,7 @@ foreach(SHADER ${SHADER_SOURCES})
         COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_BINARY_DIR}
         COMMAND ${GLSLANG_VALIDATOR} -V ${SHADER_SOURCE_DIR}/${SHADER} -o ${SPIRV}
         DEPENDS ${SHADER_SOURCE_DIR}/${SHADER} ${SHADER_SOURCE_DIR}/braid_common.glsl
+                ${SHADER_SOURCE_DIR}/polytope.glsl
         COMMENT "Compiling ${SHADER}"
         VERBATIM
     )

@@ -35,7 +35,7 @@ struct ComputeOutput {
 };
 
 struct BraidSettings {
-    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes, 17: Hopf fibration, 18: tesseract
+    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes, 17: Hopf fibration, 18: tesseract, 19: 4D polytopes
     bool paused{};
     bool autoRotate{false};
     bool limitTubeOverlap{false};
@@ -151,6 +151,37 @@ struct TesseractSettings {
     float tilt{0.35F};
     int pointsAlong{160};
     int pointsAround{10};
+    std::array<float, 3> nearColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> farColor{0.14F, 0.58F, 1.00F};
+};
+
+// Regular 4D polytopes and compounds of them (see Polytope4D.hpp).
+struct PolytopeSettings {
+    bool paused{};
+    int shape{3}; // Polytope4D
+    int duoprismP{6};
+    int duoprismQ{12};
+    int colorMode{0}; // 0 4D depth, 1 parts, 2 4D directions, 3 parts shaded by depth
+    bool bentEdges{false};  // edges as great circles on the 3-sphere
+    bool counterTurn{true}; // parts of a compound turn against each other
+    float animationSpeed{0.30F};
+    float turnXW{1.0F};
+    float turnYZ{0.0F};
+    float turnZW{0.0F};
+    float spin{0.20F};
+    float size{0.85F};
+    float tubeRadius{0.018F};
+    float cameraDistance{2.4F}; // in circumradii; 1 with bent edges is stereographic
+    float slice{0.0F};          // glow of the cross-section a sweeping hyperplane cuts
+    float sliceWidth{0.10F};
+    float lightFlow{2.0F};
+    float lightStrength{0.4F};
+    float pointSize{1.20F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.35F};
+    int pointBudget{160000};
+    int pointsAround{6};
     std::array<float, 3> nearColor{1.00F, 0.62F, 0.16F};
     std::array<float, 3> farColor{0.14F, 0.58F, 1.00F};
 };
@@ -417,7 +448,7 @@ struct DemoState {
     explicit DemoState(Preset selectedPreset) : preset(std::move(selectedPreset)) {
         braid.geometryMode = preset.initialGeometryMode;
         palette.enabled =
-            braid.geometryMode == 4 || braid.geometryMode == 16 || braid.geometryMode == 17;
+            braid.geometryMode == 4 || braid.geometryMode >= 16;
     }
 
     Preset preset;
@@ -428,6 +459,7 @@ struct DemoState {
     NestedCubeSettings nestedCubes;
     HopfSettings hopf;
     TesseractSettings tesseract;
+    PolytopeSettings polytope;
     EversionSettings eversion;
     SleeveSettings sleeve;
     MorphSettings morph;
@@ -461,6 +493,9 @@ struct DemoState {
     } else if (state.braid.geometryMode == 16) {
         inputs.paused = state.nestedCubes.paused;
         inputs.animationSpeed = state.nestedCubes.animationSpeed;
+    } else if (state.braid.geometryMode == 19) {
+        inputs.paused = state.polytope.paused;
+        inputs.animationSpeed = state.polytope.animationSpeed;
     } else if (state.braid.geometryMode == 18) {
         inputs.paused = state.tesseract.paused;
         inputs.animationSpeed = state.tesseract.animationSpeed;

@@ -210,6 +210,19 @@ the far colour by their 4D depth, and lights run along the edges. Launch it with
 ordinary second turn, spin, the 4D camera distance, size, tube radius, light flow and
 strength, point counts and appearance, tilt and the two colours.
 
+**4D polytopes** widens the tesseract into a gallery: the six regular polytopes (5-cell,
+tesseract, 16-cell, 24-cell, 600-cell and 120-cell), a p x q duoprism, and compounds:
+a tesseract with its dual 16-cell, the three 16-cells hidden in a 24-cell, a tesseract
+inside a tesseract and a 24-cell with its dual. The edges are built on the CPU and read
+by the shaders from a storage buffer. Colour shows the fourth dimension: by 4D depth,
+by part of a compound (or ring of a duoprism), by 4D direction (edges parallel in 4D
+share a colour), or by part shaded with depth. **Slice glow** sweeps a hyperplane
+through the figure and lights up the 3D cross-section it cuts. **Bend edges onto the
+3-sphere** turns the edges into great circles, and at 4D camera distance 1 the view
+becomes the stereographic projection. Parts of a compound can turn against each other;
+the figure turns in the XW and ZW planes and an ordinary YZ plane. Launch it with
+`--preset polytopes-4d`.
+
 **Effects** is a separate window whose settings apply to the points of every geometry.
 **Drift** moves neighbouring points together in a slow flow and **Jitter** makes each
 tremble on its own; both slide points along the surface or away from it. **Shed

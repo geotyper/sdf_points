@@ -48,7 +48,7 @@ std::string_view loopDriverLabel(const int geometryMode, const LoopDriver driver
         if (geometryMode == 17) {
             return "Fibre flows";
         }
-        if (geometryMode == 18) {
+        if (geometryMode == 18 || geometryMode == 19) {
             return "Tesseract turns";
         }
         if (geometryMode == 5 || geometryMode == 14) {

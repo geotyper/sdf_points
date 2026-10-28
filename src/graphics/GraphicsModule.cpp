@@ -4,6 +4,7 @@
 #include "vkexp/demo/ArchLattice.hpp"
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
+#include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/profiling/Profiler.hpp"
@@ -45,6 +46,8 @@ void GraphicsModule::onAttach(AppContext& context) {
                                      VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         VkDescriptorSetLayoutBinding{1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
                                      VK_SHADER_STAGE_VERTEX_BIT, nullptr},
+        VkDescriptorSetLayoutBinding{2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+                                     VK_SHADER_STAGE_VERTEX_BIT, nullptr},
     };
     VkDescriptorSetLayoutCreateInfo setInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     setInfo.bindingCount = static_cast<std::uint32_t>(setBindings.size());
@@ -56,6 +59,7 @@ void GraphicsModule::onAttach(AppContext& context) {
     const std::array poolSizes{
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
     };
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     poolInfo.maxSets = 1;
@@ -86,7 +90,20 @@ void GraphicsModule::onAttach(AppContext& context) {
     effectsWrite.descriptorCount = 1;
     effectsWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     effectsWrite.pBufferInfo = &effectsInfo;
-    vkUpdateDescriptorSets(device, 1, &effectsWrite, 0, nullptr);
+    // Room for the largest figure: the 120-cell's 1200 edges, three vec4 each.
+    constexpr VkDeviceSize polytopeBytes = 2048U * 12U * sizeof(float);
+    polytope_.create(context.vulkan.physicalDevice(), device,
+                     BufferResourceConfig{polytopeBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT});
+    const VkDescriptorBufferInfo polytopeInfo{polytope_.buffer(), 0, polytopeBytes};
+    VkWriteDescriptorSet polytopeWrite = effectsWrite;
+    polytopeWrite.dstBinding = 2;
+    polytopeWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    polytopeWrite.pBufferInfo = &polytopeInfo;
+    const std::array bufferWrites{effectsWrite, polytopeWrite};
+    vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(bufferWrites.size()),
+                           bufferWrites.data(), 0, nullptr);
 
     constexpr VkPushConstantRange pushConstants{
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32U * sizeof(float)};
@@ -259,6 +276,10 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         } else if (state_.braid.geometryMode == 16) {
             if (!state_.nestedCubes.paused) {
                 nestedSphereTime_ += frame.deltaSeconds * state_.nestedCubes.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 19) {
+            if (!state_.polytope.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.polytope.animationSpeed;
             }
         } else if (state_.braid.geometryMode == 18) {
             if (!state_.tesseract.paused) {
@@ -438,6 +459,45 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         const auto& cubes = state_.nestedCubes;
         const auto cubeRatio = static_cast<float>(
             nestedCubeRatio(cubes.sizeRatio, cubes.roundness, cubes.keepApart));
+        const auto& polytope = state_.polytope;
+        int polytopeAlong = 1;
+        if (braid.geometryMode == 19) {
+            // Rebuild the edges only when the figure changes; the colours are
+            // rewritten every frame so palette edits show at once.
+            const std::array key{polytope.shape, polytope.duoprismP, polytope.duoprismQ};
+            if (key != polytopeKey_) {
+                polytopeKey_ = key;
+                const auto edges = polytopeEdges(static_cast<Polytope4D>(polytope.shape),
+                                                 polytope.duoprismP, polytope.duoprismQ);
+                polytopeEdgeCount_ = static_cast<int>(std::min<std::size_t>(edges.size(), 2048U));
+                polytopeData_.assign(static_cast<std::size_t>(polytopeEdgeCount_) * 12U, 0.0F);
+                polytopeClasses_.resize(static_cast<std::size_t>(polytopeEdgeCount_));
+                for (std::size_t edge = 0; edge < polytopeClasses_.size(); ++edge) {
+                    const auto& source = edges[edge];
+                    float* out = polytopeData_.data() + edge * 12U;
+                    for (std::size_t i = 0; i < 4; ++i) {
+                        out[i] = static_cast<float>(source.start[i]);
+                        out[4 + i] = static_cast<float>(source.end[i]);
+                    }
+                    out[11] = static_cast<float>(source.part);
+                    polytopeClasses_[edge] = {source.part, source.direction};
+                }
+            }
+            // Parts or 4D directions pick their palette colour.
+            const auto& colors = state_.palette.colors;
+            const bool byDirection = polytope.colorMode == 2;
+            for (std::size_t edge = 0; edge < polytopeClasses_.size(); ++edge) {
+                const auto group = static_cast<std::size_t>(polytopeClasses_[edge][byDirection ? 1 : 0]);
+                const auto& color = colors[group % colors.size()];
+                std::copy(color.begin(), color.end(), polytopeData_.begin() +
+                                                          static_cast<std::ptrdiff_t>(edge * 12U + 8U));
+            }
+            if (!polytopeData_.empty()) {
+                polytope_.write(polytopeData_.data(), polytopeData_.size() * sizeof(float));
+            }
+            polytopeAlong = polytopePointsAlong(polytope.pointBudget, polytopeEdgeCount_,
+                                                polytope.pointsAround);
+        }
         std::array<float, 32> pushConstants{};
         if (braid.geometryMode == 16) {
             pushConstants = {
@@ -473,6 +533,42 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 cubes.perspective ? cubes.cameraDistance : 0.0F,
                 cubes.sync && !cubes.zoom ? 1.0F + cubes.syncHold : 0.0F,
                 cubes.syncFlash,
+            };
+        } else if (braid.geometryMode == 19) {
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                polytope.size,
+                polytope.tubeRadius,
+                polytope.bentEdges ? polytope.cameraDistance
+                                   : std::max(polytope.cameraDistance, 1.3F),
+                polytope.turnXW,
+                static_cast<float>(polytopeAlong),
+                static_cast<float>(polytope.pointsAround),
+                polytope.pointSize,
+                static_cast<float>(polytopeEdgeCount_),
+                polytope.tilt,
+                polytope.glow,
+                polytope.brightness,
+                polytope.turnYZ,
+                polytope.nearColor[0],
+                polytope.nearColor[1],
+                polytope.nearColor[2],
+                19.0F,
+                polytope.farColor[0],
+                polytope.farColor[1],
+                polytope.farColor[2],
+                polytope.spin,
+                polytope.turnZW,
+                static_cast<float>(polytope.colorMode),
+                polytope.slice,
+                polytope.sliceWidth,
+                loopCycles_,
+                polytope.lightStrength,
+                static_cast<float>((polytope.bentEdges ? 1 : 0) | (polytope.counterTurn ? 2 : 0)),
+                polytope.lightFlow,
             };
         } else if (braid.geometryMode == 18) {
             const auto& tesseract = state_.tesseract;
@@ -954,11 +1050,16 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         // Both passes use the same periodic surface and flow phase. The closed
         // depth-only skin hides rear points even in the gaps between sprites.
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, surfacePipeline_);
+        // The polytope's skin reads its edges; the depth image in the same set
+        // is not touched by the skin shaders.
+        vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
+                                &depthSet_, 0, nullptr);
         const auto objectCount = static_cast<std::uint32_t>(
             braid.geometryMode == 4    ? state_.nestedSpheres.sphereCount
             : braid.geometryMode == 16 ? cubes.cubeCount + (cubes.zoom ? 1 : 0)
             : braid.geometryMode == 17 ? state_.hopf.tori * state_.hopf.fibers
             : braid.geometryMode == 18 ? 32
+            : braid.geometryMode == 19 ? polytopeEdgeCount_
             : braid.geometryMode == 11 ? tentacle.tentacles + 1
             : braid.geometryMode == 15 ? arched.arches + 1
             : braid.geometryMode == 8  ? state_.vortex.strands
@@ -972,8 +1073,9 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             // A tube of the Hopf fibration or the tesseract needs far fewer
             // cells than the default grid.
             vkCmdDraw(commands,
-                      braid.geometryMode == 17 || braid.geometryMode == 18 ? 240U * 24U * 6U
-                                                                           : 720U * 64U * 6U,
+                      braid.geometryMode == 19 ? static_cast<std::uint32_t>(polytopeAlong) * 12U * 6U
+                      : braid.geometryMode == 17 || braid.geometryMode == 18 ? 240U * 24U * 6U
+                                                                             : 720U * 64U * 6U,
                       objectCount, 0, 0);
         }
         vkCmdEndRendering(commands);
@@ -1066,6 +1168,11 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                     static_cast<std::uint32_t>(sizeof(cubeDraw)), cubeDraw.data());
                 vkCmdDraw(commands, 6, cubePointCount, 0, 0);
             }
+        } else if (braid.geometryMode == 19) {
+            vkCmdDraw(commands, 6,
+                      static_cast<std::uint32_t>(polytopeEdgeCount_ * polytopeAlong *
+                                                 polytope.pointsAround),
+                      0, 0);
         } else if (braid.geometryMode == 18) {
             const auto& tesseract = state_.tesseract;
             vkCmdDraw(commands, 6,
@@ -1209,6 +1316,7 @@ void GraphicsModule::onDetach(AppContext&) {
     depthPool_.reset();
     depthSetLayout_.reset();
     effects_.reset();
+    polytope_.reset();
 }
 
 } // namespace vkexp

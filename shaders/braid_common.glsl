@@ -84,6 +84,13 @@ bool tesseractMode() {
     return pc.style.w > 17.5 && pc.style.w < 18.5;
 }
 
+bool polytopeMode() {
+    return pc.style.w > 18.5 && pc.style.w < 19.5;
+}
+
+// Defined in polytope.glsl, which only the vertex shaders include.
+float polytopeSpan();
+
 float hashScalar(float value) {
     return fract(sin(value * 127.1) * 43758.5453123);
 }
@@ -1379,6 +1386,9 @@ vec4 projectView(vec3 p) {
     }
     if (tesseractMode()) {
         span = tesseractSpan();
+    }
+    if (polytopeMode()) {
+        span = polytopeSpan();
     }
     vec2 scale = min(pc.view.x, pc.view.y) / pc.view.xy;
     vec4 clip = vec4(p.xy * vec2(1.0, -1.0) * scale / span, (4.0 - p.z) / 8.0, 1.0);
