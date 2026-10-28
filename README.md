@@ -192,6 +192,28 @@ same moment and the windows open straight through. **Hold aligned** slows the tu
 around that moment so the cubes drift together, stand aligned and burst apart, and
 **Alignment flash** lights them up as they meet.
 
+**Flowing shells** sets the nested cube frames flowing. Once per hop every point lets
+go of its shell, falls inward and settles in the same place on the next shell down,
+while the innermost shell's points shoot out as a fountain and build the outer shell
+anew; every shell carries the same lattice, so after a hop the picture is where it
+started and loops close. **Cascade** at 1 makes it a story: the outer shell crumbles
+first, the fall runs inward shell by shell and the fountain from the centre comes last.
+**Crumble spread** lets a shell go all at once or point by point, **Top first** orders
+the points from the top of their shell down, **Rest** holds every point at home for
+part of the hop, and **Fall sag**, **Scatter** and **Fountain height** shape the
+flights. Negative **Hops per cycle** plays it backwards. There is no hiding skin: the
+far side dims with depth instead. Launch it with `--preset flowing-shells`.
+
+**Origami** cuts a Platonic solid (tetrahedron to icosahedron) along a tree of its
+edges and unfolds it on the hinges left: into its flat net and, with **Fold through**,
+on into the mirror solid below the base, then back. **Net** picks among the nets that
+lie flat without overlapping. **Stagger** sends the fold out from the base as a wave,
+**Hold closed** and **Hold flat** linger at either end, **Flat swirl** twists the net
+about its centre while it lies flat, and **Sphere** swells the closed faces onto the
+circumsphere. Hinges light up while they turn (**Hinge glow**) and the whole net
+flashes as it lies flat. **Frame width** below 1 leaves a frame round a window in
+every face. Launch it with `--preset origami`.
+
 **Hopf fibration** draws the circles of the Hopf fibration seen through stereographic
 projection: every circle is linked with every other, and the circles over one latitude
 fill a torus, so the tori nest. Lights run along every circle, the circles drift from

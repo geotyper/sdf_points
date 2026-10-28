@@ -102,6 +102,16 @@ bool fourSurfaceMode() {
     return pc.style.w > 21.5 && pc.style.w < 22.5;
 }
 
+// A solid unfolding into its net (origami.glsl).
+bool origamiMode() {
+    return pc.style.w > 22.5 && pc.style.w < 23.5;
+}
+
+// Points falling from shell to shell (shells.glsl).
+bool shellMode() {
+    return pc.style.w > 23.5 && pc.style.w < 24.5;
+}
+
 // Both fit a ball of 1.2 sizes; loop.w zooms in.
 float sectionSpan() {
     return pc.shape.x * 1.2 * 1.25 / max(pc.loop.w, 0.05);
@@ -127,6 +137,8 @@ vec4 mobiusFlow(vec4 q, float amount, float rate) {
 
 // Defined in polytope.glsl, which only the vertex shaders include.
 float polytopeSpan();
+float origamiSpan();
+float shellSpan();
 
 float hashScalar(float value) {
     return fract(sin(value * 127.1) * 43758.5453123);
@@ -1453,6 +1465,12 @@ vec4 projectView(vec3 p) {
     }
     if (sliceMode() || juliaMode() || fourSurfaceMode()) {
         span = sectionSpan();
+    }
+    if (origamiMode()) {
+        span = origamiSpan();
+    }
+    if (shellMode()) {
+        span = shellSpan();
     }
     vec2 scale = min(pc.view.x, pc.view.y) / pc.view.xy;
     vec4 clip = vec4(p.xy * vec2(1.0, -1.0) * scale / span, (4.0 - p.z) / 8.0, 1.0);

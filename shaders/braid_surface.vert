@@ -3,6 +3,8 @@
 #include "braid_common.glsl"
 #include "polytope.glsl"
 #include "surfaces4d.glsl"
+#include "origami.glsl"
+#include "shells.glsl"
 
 const ivec2 corners[6] = ivec2[](ivec2(0, 0), ivec2(1, 0), ivec2(0, 1),
                                ivec2(0, 1), ivec2(1, 0), ivec2(1, 1));
@@ -56,6 +58,24 @@ void main() {
             }
         }
         gl_Position = projectPoint(position);
+        return;
+    }
+    if (origamiMode()) {
+        // One instance per face: every fan triangle a 16 x 16 mesh from the
+        // window's edge (or the centre) out to the rim.
+        const int grid = 16;
+        int fan = cell / (grid * grid);
+        if (fan >= origamiSides()) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            return;
+        }
+        int fanCell = cell % (grid * grid);
+        ivec2 corner = ivec2(fanCell / grid, fanCell % grid) + corners[gl_VertexIndex % 6];
+        float inner = origamiInnerRadius();
+        vec3 normal;
+        gl_Position = projectPoint(origamiPoint(gl_InstanceIndex, fan,
+                                                mix(inner, 1.0, float(corner.x) / float(grid)),
+                                                float(corner.y) / float(grid), normal));
         return;
     }
     if (fourSurfaceMode()) {

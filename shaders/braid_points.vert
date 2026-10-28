@@ -4,6 +4,8 @@
 #include "polytope.glsl"
 #include "sections4d.glsl"
 #include "surfaces4d.glsl"
+#include "origami.glsl"
+#include "shells.glsl"
 
 layout(set = 0, binding = 3, std430) readonly buffer SectionHits {
     vec4 sectionHits[];
@@ -208,6 +210,135 @@ void main() {
         }
         pointColor = tint * illumination * pc.look.z;
         pointFacing = smoothstep(-0.02, 0.03, viewNormal.z);
+
+        vec4 clip = effectClip(position, viewNormal, radiusPixels);
+        clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
+        gl_Position = clip;
+        disc *= (radiusPixels + 0.65) / radiusPixels;
+        return;
+    }
+
+    if (origamiMode()) {
+        // Every fan triangle of every face holds rows parallel to its rim,
+        // offset + 1, offset + 2, ... points long, so the spacing stays even.
+        int rows = max(int(pc.points.x + 0.5), 1), offset = int(pc.points.y + 0.5);
+        int sides = origamiSides();
+        int perFan = rows * offset + rows * (rows + 1) / 2;
+        int face = gl_InstanceIndex / (sides * perFan);
+        int rest = gl_InstanceIndex % (sides * perFan);
+        int fan = rest / perFan, index = rest % perFan;
+        float b = float(2 * offset + 1);
+        int row = int((sqrt(b * b + 8.0 * float(index)) - b) * 0.5);
+        if (row * offset + row * (row + 1) / 2 > index) --row;
+        if ((row + 1) * offset + (row + 1) * (row + 2) / 2 <= index) ++row;
+        int column = index - (row * offset + row * (row + 1) / 2);
+        if (face >= int(pc.motion.x + 0.5) || row >= rows) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            pointColor = vec3(0.0);
+            pointFacing = 0.0;
+            return;
+        }
+        float rho = (float(offset + row) + 0.5) / float(offset + rows);
+        float u = (float(column) + 0.5) / float(offset + row + 1);
+        vec3 normal;
+        vec3 position = origamiPoint(face, fan, rho, u, normal);
+        vec3 viewNormal = toView(normal);
+        vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
+        // Both sides light up: the skin alone decides what is hidden.
+        float diffuse = abs(dot(viewNormal, light));
+        float illumination = 0.12 + 0.88 * pow(diffuse, 0.8);
+        float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
+                           * mix(0.36, 1.0, illumination);
+        radiusPixels = max(radiusPixels, 0.30);
+        vec4 colour = origamiFace(face, 2);
+        // The hinge lights up while it turns, brightest half way.
+        float fold = abs(origamiFace(face, 0).w);
+        float hinge = int(colour.w + 0.5) == fan && colour.w > -0.5
+                    ? smoothstep(0.75, 1.0, rho) * 4.0 * fold * (1.0 - fold) : 0.0;
+        vec3 tint = colour.rgb * (1.0 + pc.motion.w) + 0.25 * pc.motion.w;
+        tint = tint * (1.0 + 2.0 * pc.motion.z * hinge) + 0.4 * pc.motion.z * hinge;
+        radiusPixels *= 1.0 + 0.4 * pc.motion.z * hinge;
+        pointColor = tint * illumination * pc.look.z;
+        pointFacing = 1.0;
+
+        vec4 clip = effectClip(position, viewNormal, radiusPixels);
+        clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
+        gl_Position = clip;
+        disc *= (radiusPixels + 0.65) / radiusPixels;
+        return;
+    }
+
+    if (shellMode()) {
+        // The same pinwheel of frame strips on every shell (see nested cubes).
+        int shells = shellCount();
+        int perShell = max(int(pc.points.x + 0.5), 24);
+        int shell = gl_InstanceIndex / perShell;
+        int slot = gl_InstanceIndex % perShell;
+        int perStrip = perShell / 24;
+        int strip = slot / perStrip;
+        int sampleIndex = slot % perStrip;
+        float border = pc.shape.z;
+        float stripLength = 2.0 - border;
+        int rows = max(int(round(sqrt(float(perStrip) * border / stripLength))), 1);
+        int columns = max(perStrip / rows, 1);
+        int row = sampleIndex / columns, column = sampleIndex % columns;
+        if (shell >= shells || strip >= 24 || row >= rows) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            pointColor = vec3(0.0);
+            pointFacing = 0.0;
+            return;
+        }
+        vec2 ab = vec2(-1.0 + stripLength * (float(column) + 0.5) / float(columns),
+                       1.0 - border * (float(row) + 0.5) / float(rows));
+        for (int turn = 0; turn < strip % 4; ++turn) {
+            ab = vec2(-ab.y, ab.x);
+        }
+        vec3 local = roundedCubePoint(cubeFacePoint(strip / 4, ab));
+        // When this point lets go within the hop: by chance or from the top
+        // of its shell down, and the outer shells first with the cascade.
+        float order = mix(hashScalar(float(slot) * 0.6180339 + 0.37),
+                          0.5 - 0.5 * local.y / max(length(local), 1e-4), pc.loop.w);
+        order = mix(order, float(shell) / float(shells - 1), pc.loop.z);
+        float rest = clamp(pc.motion.x, 0.0, 0.9), spread = clamp(pc.motion.y, 0.0, 0.95);
+        float hop = timePhase(pc.wave.w) / TAU;
+        float leave = 0.5 * rest + spread * (1.0 - rest) * order;
+        float flight = clamp((hop - leave) / max((1.0 - spread) * (1.0 - rest), 1e-3), 0.0, 1.0);
+        float eased = flight * flight * (3.0 - 2.0 * flight);
+        int next = (shell + 1) % shells;
+        bool fountain = next == 0;
+        vec3 from = shellSize(float(shell)) * turnShell(local, shell);
+        vec3 to = shellSize(float(next)) * turnShell(local, next);
+        float arc = sin(PI * flight);
+        vec3 position = mix(from, to, eased);
+        // Falling inward the points sag under their weight; the fountain
+        // throws them up and over.
+        position.y += fountain ? pc.loop.y * pc.shape.x * arc
+                               : -pc.motion.z * shellSize(float(shell)) * arc;
+        vec3 scatter = vec3(hashScalar(float(gl_InstanceIndex) + 0.11), hashScalar(float(gl_InstanceIndex) + 7.3),
+                            hashScalar(float(gl_InstanceIndex) + 13.9)) * 2.0 - 1.0;
+        position += pc.motion.w * shellSize(float(shell)) * arc * scatter;
+        float level = mix(float(shell), fountain ? 0.0 : float(next), eased);
+        vec3 normal = normalize(mix(turnShell(roundedCubeNormal(local), shell),
+                                    turnShell(roundedCubeNormal(local), next), eased));
+        vec3 viewNormal = toView(normal);
+        vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
+        float diffuse = abs(dot(viewNormal, light));
+        float illumination = 0.10 + 0.90 * pow(diffuse, 0.8);
+        // No skin hides the far side: it dims with depth instead.
+        float span = shellSpan();
+        float nearness = smoothstep(-span, span, toView(position).z);
+        float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
+                           * mix(0.36, 1.0, illumination)
+                           * clamp(pow(pc.shape.y, 0.5 * level), 0.35, 1.0);
+        radiusPixels = max(radiusPixels, 0.30);
+        int colorMode = int(pc.points.w + 0.5);
+        vec3 tint = colorMode == 0 ? mix(shellPalette(shell), shellPalette(next), eased)
+                  : colorMode == 1 ? mix(pc.style.rgb, pc.wave.rgb, level / float(shells - 1))
+                                   : pc.style.rgb;
+        // Points in flight burn brighter.
+        tint = tint * (1.0 + 0.8 * arc) + 0.15 * arc;
+        pointColor = tint * illumination * mix(0.45, 1.0, nearness) * pc.look.z;
+        pointFacing = 1.0;
 
         vec4 clip = effectClip(position, viewNormal, radiusPixels);
         clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;

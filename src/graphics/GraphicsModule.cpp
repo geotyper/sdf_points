@@ -8,6 +8,7 @@
 #include "vkexp/demo/FourSurfaces.hpp"
 #include "vkexp/demo/HigherCubes.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
+#include "vkexp/demo/Origami.hpp"
 #include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/demo/Quasicrystal.hpp"
@@ -325,6 +326,14 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         } else if (state_.braid.geometryMode == 22) {
             if (!state_.fourSurface.paused) {
                 eversionTime_ += frame.deltaSeconds * state_.fourSurface.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 23) {
+            if (!state_.origami.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.origami.animationSpeed;
+            }
+        } else if (state_.braid.geometryMode == 24) {
+            if (!state_.shells.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.shells.animationSpeed;
             }
         } else if (state_.braid.geometryMode == 21) {
             if (!state_.julia.paused) {
@@ -658,6 +667,98 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             // The figure's own edges are gone: rebuild them on return.
             polytopeKey_ = {-1, -1, -1};
         }
+        // Origami: the net is cut once per solid and variant, every face posed
+        // each frame and handed over with its colour in the polytope buffer.
+        const auto& origami = state_.origami;
+        const bool origamiMode = braid.geometryMode == 23;
+        int origamiFaces = 0, origamiSides = 4, origamiRows = 1, origamiOffset = 0;
+        float origamiSwell = 0.0F, origamiSwirl = 0.0F, origamiFlash = 0.0F;
+        if (origamiMode) {
+            const std::array key{origami.solid, origami.variant};
+            if (key != origamiKey_) {
+                origamiKey_ = key;
+                origamiNet_ = origamiNet(origami.solid, origami.variant);
+                origamiReach_ = origamiReach(origamiNet_);
+            }
+            const auto& net = origamiNet_;
+            origamiFaces = static_cast<int>(net.corners.size());
+            origamiSides = net.sides;
+            // The shader's timePhase(1), so loops close.
+            const double rounded = loopCycles_ > 0.0F ? std::round(loopCycles_) / loopCycles_ : 1.0;
+            const double phase = static_cast<double>(eversionTime_) * rounded;
+            std::vector<double> folds(net.corners.size(), 1.0);
+            double opened = 0.0, closed = 1.0;
+            for (std::size_t f = 1; f < folds.size(); ++f) {
+                folds[f] = origamiFold(phase, net.depth[f], net.maxDepth, origami.stagger,
+                                       origami.holdClosed, origami.holdFlat, origami.mirror);
+                opened += 1.0 - std::abs(folds[f]);
+                closed = std::min(closed, std::abs(folds[f]));
+            }
+            const double flat = folds.size() > 1 ? opened / static_cast<double>(folds.size() - 1) : 0.0;
+            origamiSwell = origami.sphere * static_cast<float>(closed * closed * closed);
+            origamiSwirl = origami.swirl * static_cast<float>(flat * flat);
+            origamiFlash = origami.flatFlash * static_cast<float>(std::pow(flat, 4.0));
+            const OrigamiPose pose = origamiPose(net, folds);
+            Vec3d middle{};
+            for (const auto& c : pose.centres) {
+                for (std::size_t i = 0; i < 3; ++i) middle[i] += c[i] / static_cast<double>(pose.centres.size());
+            }
+            const auto& colors = state_.palette.colors;
+            std::vector<float> faces(static_cast<std::size_t>(origamiFaces) * origamiFaceVec4 * 4U, 0.0F);
+            for (std::size_t f = 0; f < pose.corners.size(); ++f) {
+                float* out = faces.data() + f * origamiFaceVec4 * 4U;
+                const auto put = [&](const std::size_t slot, const Vec3d& v, const bool centred, const double w) {
+                    for (std::size_t i = 0; i < 3; ++i) {
+                        out[4 * slot + i] = static_cast<float>(v[i] - (centred ? middle[i] : 0.0));
+                    }
+                    out[4 * slot + 3] = static_cast<float>(w);
+                };
+                put(0, pose.centres[f], true, folds[f]);
+                put(1, pose.normals[f], false, net.depth[f]);
+                const float depthShare = static_cast<float>(net.depth[f]) /
+                                         static_cast<float>(std::max(net.maxDepth, 1));
+                std::array<float, 3> tint{};
+                if (origami.colorMode == 2) {
+                    for (std::size_t i = 0; i < 3; ++i) {
+                        tint[i] = origami.nearColor[i] + (origami.farColor[i] - origami.nearColor[i]) * depthShare;
+                    }
+                } else {
+                    const std::size_t pick = origami.colorMode == 1 ? static_cast<std::size_t>(net.depth[f]) : f;
+                    tint = colors[pick % colors.size()];
+                }
+                put(2, {tint[0], tint[1], tint[2]}, false, net.hingeCorner[f]);
+                for (std::size_t c = 0; c < static_cast<std::size_t>(origamiMaxSides); ++c) {
+                    put(3 + c, pose.corners[f][std::min(c, pose.corners[f].size() - 1)], true, 0.0);
+                }
+            }
+            polytope_.write(faces.data(), faces.size() * sizeof(float));
+            polytopeKey_ = {-1, -1, -1};
+            // Rows per fan triangle: the window takes the first `offset` rows'
+            // worth of the triangle, so the rows left fill the frame evenly.
+            const double inner = 1.0 - std::clamp(static_cast<double>(origami.border), 0.03, 1.0);
+            const double share = inner / (1.0 - inner);
+            const double perFan = static_cast<double>(origami.pointBudget) /
+                                  static_cast<double>(std::max(origamiFaces * origamiSides, 1));
+            origamiRows = std::max(static_cast<int>(std::lround(std::sqrt(perFan / (share + 0.5)))), 1);
+            origamiOffset = static_cast<int>(std::lround(share * origamiRows));
+        }
+        const int origamiPoints =
+            origamiFaces * origamiSides * (origamiRows * origamiOffset + origamiRows * (origamiRows + 1) / 2);
+        // Flowing shells: the palette in the polytope buffer, as for the sections.
+        const auto& shells = state_.shells;
+        const bool shellMode = braid.geometryMode == 24;
+        const auto shellRatio = static_cast<float>(nestedCubeRatio(shells.sizeRatio, shells.roundness, true));
+        const int shellCount = std::max(shells.shells, 2);
+        const int perShell = std::max(shells.pointsPerShell / 24, 1) * 24;
+        if (shellMode) {
+            std::array<float, 20> palette{};
+            for (std::size_t i = 0; i < 5; ++i) {
+                const auto& color = state_.palette.colors[i % state_.palette.colors.size()];
+                std::copy(color.begin(), color.end(), palette.begin() + static_cast<std::ptrdiff_t>(4 * i));
+            }
+            polytope_.write(palette.data(), sizeof(palette));
+            polytopeKey_ = {-1, -1, -1};
+        }
         std::array<float, 32> pushConstants{};
         if (braid.geometryMode == 16) {
             pushConstants = {
@@ -729,6 +830,76 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 3.0F,
                 0.0F,
                 slice.zoom,
+            };
+        } else if (origamiMode) {
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                origami.size,
+                origami.border,
+                origamiSwell,
+                static_cast<float>(origamiSides),
+                static_cast<float>(origamiRows),
+                static_cast<float>(origamiOffset),
+                origami.pointSize,
+                0.0F,
+                origami.tilt,
+                origami.glow,
+                origami.brightness,
+                origamiSwirl,
+                0.0F,
+                0.0F,
+                0.0F,
+                23.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                origami.spin,
+                static_cast<float>(origamiFaces),
+                static_cast<float>(origamiReach_),
+                origami.hingeGlow,
+                origamiFlash,
+                loopCycles_,
+                0.0F,
+                0.0F,
+                origami.zoom,
+            };
+        } else if (shellMode) {
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                shells.outerSize,
+                shellRatio,
+                shells.border,
+                shells.roundness,
+                static_cast<float>(perShell),
+                static_cast<float>(shellCount),
+                shells.pointSize,
+                static_cast<float>(shells.colorMode),
+                shells.tilt,
+                shells.glow,
+                shells.brightness,
+                shells.turnRate,
+                shells.outerColor[0],
+                shells.outerColor[1],
+                shells.outerColor[2],
+                24.0F,
+                shells.innerColor[0],
+                shells.innerColor[1],
+                shells.innerColor[2],
+                shells.hops,
+                shells.rest,
+                shells.spread,
+                shells.sag,
+                shells.scatter,
+                loopCycles_,
+                shells.fountain,
+                shells.cascade,
+                shells.order,
             };
         } else if (fourSurfaceMode) {
             pushConstants = {
@@ -1357,6 +1528,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             : braid.geometryMode == 18 ? 32
             : braid.geometryMode == 19 ? polytopeEdgeCount_
             : fourSurfaceMode          ? surfacePatches
+            : origamiMode              ? origamiFaces
             : braid.geometryMode == 11 ? tentacle.tentacles + 1
             : braid.geometryMode == 15 ? arched.arches + 1
             : braid.geometryMode == 8  ? state_.vortex.strands
@@ -1366,13 +1538,15 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 ? 1
                                       : braid.strands);
         // See-through leaves the depth clear, so nothing hides any point.
-        if (!fx.seeThrough && !sectionMode) {
+        // The shells are mostly gaps and empty in turn: no skin, they dim with depth.
+        if (!fx.seeThrough && !sectionMode && !shellMode) {
             // A tube of the Hopf fibration or the tesseract needs far fewer
             // cells than the default grid.
             vkCmdDraw(commands,
                       braid.geometryMode == 19 ? static_cast<std::uint32_t>(polytopeAlong) * 12U * 6U
                       : fourSurfaceMode
                           ? static_cast<std::uint32_t>(surfaceSkin.columns * surfaceSkin.rows * 6)
+                      : origamiMode ? static_cast<std::uint32_t>(origamiSides * 16 * 16 * 6)
                       : braid.geometryMode == 17 && (state_.hopf.knotP != 1 || state_.hopf.knotQ != 1)
                           ? 720U * 24U * 6U
                       : braid.geometryMode == 17 || braid.geometryMode == 18 ? 240U * 24U * 6U
@@ -1471,6 +1645,10 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             }
         } else if (sectionMode) {
             vkCmdDraw(commands, 6, sectionInstances, 0, 0);
+        } else if (origamiMode) {
+            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(origamiPoints), 0, 0);
+        } else if (shellMode) {
+            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(shellCount * perShell), 0, 0);
         } else if (fourSurfaceMode) {
             vkCmdDraw(commands, 6,
                       static_cast<std::uint32_t>(surfacePatches * surfaceGrid.columns *

@@ -35,7 +35,7 @@ struct ComputeOutput {
 };
 
 struct BraidSettings {
-    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes, 17: Hopf fibration, 18: tesseract, 19: 4D polytopes, 20: 4D cross-sections, 21: quaternion Julia, 22: 4D surfaces
+    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes, 17: Hopf fibration, 18: tesseract, 19: 4D polytopes, 20: 4D cross-sections, 21: quaternion Julia, 22: 4D surfaces, 23: origami, 24: flowing shells
     bool paused{};
     bool autoRotate{false};
     bool limitTubeOverlap{false};
@@ -354,6 +354,65 @@ struct FourSurfaceSettings {
     return settings;
 }
 
+// Origami: a Platonic solid unfolds on its hinges into a flat net, swirls,
+// and folds on through into the mirror solid below (or back up).
+struct OrigamiSettings {
+    bool paused{};
+    int solid{1};   // OrigamiSolid
+    int variant{0}; // which non-overlapping net
+    bool mirror{true};    // fold through to the other side
+    float stagger{0.35F}; // outer hinges lag behind: 0 .. 1 (half a turn at the rim)
+    float holdClosed{0.20F};
+    float holdFlat{0.12F};
+    float swirl{1.2F};    // turn of the net's rim while it lies flat, radians
+    float sphere{0.0F};   // closed faces swell onto the circumsphere
+    float border{1.0F};   // frame width: 1 fills the faces
+    float hingeGlow{0.8F};
+    float flatFlash{0.3F};
+    int colorMode{0};     // 0 faces, 1 hinge depth, 2 near to far colour by depth
+    float spin{0.25F};
+    float animationSpeed{0.42F};
+    float size{0.55F};
+    int pointBudget{160000};
+    float pointSize{1.1F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.55F};
+    float zoom{1.25F};
+    std::array<float, 3> nearColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> farColor{0.14F, 0.58F, 1.00F};
+};
+
+// Flowing shells: nested cube frames whose points fall inward from shell to
+// shell, while the innermost shell's points fountain out to rebuild the
+// outer one.
+struct FlowingShellSettings {
+    bool paused{};
+    int shells{5};
+    float outerSize{0.80F};
+    float sizeRatio{0.62F};
+    float border{0.24F};
+    float roundness{0.0F};
+    float hops{1.0F};      // hops per flow cycle; negative runs it backwards
+    float rest{0.25F};     // share of a hop with every point at home
+    float spread{0.55F};   // share of the rest spent letting go
+    float cascade{0.8F};   // 0 every shell at once .. 1 outer shell first
+    float order{0.6F};     // 0 random .. 1 top of the shell first
+    float sag{0.35F};
+    float scatter{0.06F};
+    float fountain{0.9F};  // height of the fountain, outer sizes
+    float turnRate{1.0F};
+    int colorMode{0};      // 0 palette per shell, 1 outer to inner colour, 2 one colour
+    float animationSpeed{0.30F};
+    int pointsPerShell{24000};
+    float pointSize{1.3F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.30F};
+    std::array<float, 3> outerColor{1.00F, 0.62F, 0.16F};
+    std::array<float, 3> innerColor{0.14F, 0.58F, 1.00F};
+};
+
 // Trail of the 4D figures: fading copies drawn at earlier moments, so the
 // projected motion paints its paths.
 struct FourDTrailSettings {
@@ -642,6 +701,8 @@ struct DemoState {
     SliceSettings slice;
     JuliaSettings julia;
     FourSurfaceSettings fourSurface;
+    OrigamiSettings origami;
+    FlowingShellSettings shells;
     EversionSettings eversion;
     SleeveSettings sleeve;
     MorphSettings morph;
@@ -684,6 +745,12 @@ struct DemoState {
     } else if (state.braid.geometryMode == 22) {
         inputs.paused = state.fourSurface.paused;
         inputs.animationSpeed = state.fourSurface.animationSpeed;
+    } else if (state.braid.geometryMode == 23) {
+        inputs.paused = state.origami.paused;
+        inputs.animationSpeed = state.origami.animationSpeed;
+    } else if (state.braid.geometryMode == 24) {
+        inputs.paused = state.shells.paused;
+        inputs.animationSpeed = state.shells.animationSpeed;
     } else if (state.braid.geometryMode == 19) {
         inputs.paused = state.polytope.paused;
         inputs.animationSpeed = state.polytope.animationSpeed;

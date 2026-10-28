@@ -7,6 +7,7 @@
 #include "vkexp/demo/FourSurfaces.hpp"
 #include "vkexp/demo/LoopPlan.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
+#include "vkexp/demo/Origami.hpp"
 #include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/demo/AlgebraicKnot.hpp"
 #include "vkexp/demo/HigherCubes.hpp"
@@ -19,6 +20,7 @@
 #include "vkexp/profiling/ProfilerTypes.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <exception>
@@ -78,7 +80,7 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 22, "Built-in preset count");
+    check(registry.all().size() == 24, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
     check(registry.require("nested-spheres").initialGeometryMode == 4,
@@ -661,6 +663,12 @@ void testTentaclePatch() {
     check(registry.require("surfaces-4d").initialGeometryMode == 22, "4D surfaces geometry");
     check(vkexp::loopDriverLabel(22, vkexp::LoopDriver::Flow) == "Surface turns",
           "4D surfaces loop label");
+    check(registry.require("origami").initialGeometryMode == 23 &&
+              registry.require("flowing-shells").initialGeometryMode == 24,
+          "Origami and flowing shells geometry");
+    check(vkexp::loopDriverLabel(23, vkexp::LoopDriver::Flow) == "Fold cycles" &&
+              vkexp::loopDriverLabel(24, vkexp::LoopDriver::Flow) == "Shell hops",
+          "Origami and shells loop labels");
     const vkexp::BumpyTorusSettings chain = vkexp::torusChainDefaults();
     check(chain.tubeRadius <= vkexp::torusChainTubeLimit(chain),
           "Chain links fit through each other by default");
@@ -795,6 +803,54 @@ void testHigherCubes() {
     }
 }
 
+void testOrigami() {
+    constexpr std::array faces{4, 6, 8, 12, 20};
+    constexpr std::array sides{3, 4, 3, 5, 3};
+    for (int solid = 0; solid < vkexp::origamiSolidCount; ++solid) {
+        const auto net = vkexp::origamiNet(solid, 0);
+        const auto count = net.corners.size();
+        check(static_cast<int>(count) == faces[static_cast<std::size_t>(solid)] &&
+                  net.sides == sides[static_cast<std::size_t>(solid)],
+              "Origami solids have their faces");
+        check(!vkexp::origamiNetOverlaps(net), "Origami nets lie flat without overlapping");
+        bool tree = net.parent[0] == -1;
+        for (std::size_t f = 1; f < count; ++f) {
+            tree = tree && net.parent[f] >= 0 && static_cast<std::size_t>(net.parent[f]) < f;
+        }
+        check(tree, "Origami faces hang from earlier faces");
+        const double floor = net.corners[0][0][1];
+        const auto closed = vkexp::origamiPose(net, std::vector<double>(count, 1.0));
+        const auto flat = vkexp::origamiPose(net, std::vector<double>(count, 0.0));
+        const auto mirror = vkexp::origamiPose(net, std::vector<double>(count, -1.0));
+        bool onSphere = true, level = true, above = true, below = true;
+        for (std::size_t f = 0; f < count; ++f) {
+            for (std::size_t c = 0; c < closed.corners[f].size(); ++c) {
+                const auto& p = closed.corners[f][c];
+                onSphere = onSphere && std::abs(p[0] * p[0] + p[1] * p[1] + p[2] * p[2] - 1.0) < 1e-9;
+                above = above && p[1] > floor - 1e-9;
+                level = level && std::abs(flat.corners[f][c][1] - floor) < 1e-9;
+                below = below && mirror.corners[f][c][1] < floor + 1e-9;
+            }
+        }
+        check(onSphere && above, "Folded, the net is the solid on the floor");
+        check(level, "Flat, the net lies on the floor");
+        check(below, "Folded through, the mirror solid hangs below the floor");
+        check(vkexp::origamiReach(net) >= 1.0, "Origami reach holds the solid");
+    }
+    const auto first = vkexp::origamiNet(1, 0), second = vkexp::origamiNet(1, 1);
+    check(first.parent != second.parent || first.hingeCorner != second.hingeCorner,
+          "Origami net variants differ");
+    // The breadth-first cube net is the cross: the base and its four sides,
+    // the lid on one of them.
+    check(first.maxDepth == 2, "Cube net is a cross");
+    constexpr double pi = 3.14159265358979323846;
+    check(std::abs(vkexp::origamiFold(0.0, 1, 2, 0.0, 0.2, 0.1, true) - 1.0) < 1e-12 &&
+              std::abs(vkexp::origamiFold(pi, 1, 2, 0.0, 0.2, 0.1, true) + 1.0) < 1e-12 &&
+              std::abs(vkexp::origamiFold(pi, 1, 2, 0.0, 0.2, 0.1, false) - 1.0) < 1e-12 &&
+              std::abs(vkexp::origamiFold(0.5 * pi, 1, 2, 0.0, 0.2, 0.1, true)) < 1e-12,
+          "Origami folds: closed, mirrored, flat");
+}
+
 void testFourSurfaces() {
     check(vkexp::fourSurfacePatches({0, 5}) == 25 && vkexp::fourSurfacePatches({3, 5}) == 1,
           "Calabi-Yau has n^2 patches, the others one");
@@ -834,5 +890,6 @@ int main() {
     testHoneycomb();
     testFourSurfaces();
     testHigherCubes();
+    testOrigami();
     return failures == 0 ? 0 : 1;
 }

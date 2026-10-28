@@ -3,6 +3,7 @@
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/FourSurfaces.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
+#include "vkexp/demo/Origami.hpp"
 #include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/profiling/Profiler.hpp"
@@ -102,7 +103,8 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                        "Bumpy torus",   "Torus chain",     "Sphere eversion",
                                        "Arched sphere", "Nested cubes",    "Hopf fibration",
                                        "Tesseract",     "4D polytopes",    "4D cross-sections",
-                                       "Quaternion Julia", "4D surfaces"};
+                                       "Quaternion Julia", "4D surfaces", "Origami",
+                                       "Flowing shells"};
     const auto geometryCount = static_cast<int>(geometryNames.size());
     braid.geometryMode = std::clamp(braid.geometryMode, 0, geometryCount - 1);
     if (ImGui::BeginCombo("Geometry",
@@ -117,7 +119,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             }
         };
         group("Braids", {0, 1, 2, 3, 10});
-        group("Spheres", {4, 16, 11, 15});
+        group("Spheres", {4, 16, 24, 23, 11, 15});
         group("Four dimensions", {18, 19, 17, 22, 20, 21});
         group("Eversion", {5, 14, 6, 7, 8, 9, 12, 13});
         ImGui::EndCombo();
@@ -518,6 +520,127 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             ImGui::PushID(static_cast<int>(i));
             ImGui::ColorEdit3("##Patch color", state_.palette.colors[i].data());
             ImGui::PopID();
+        }
+    } else if (braid.geometryMode == 23) {
+        auto& origami = state_.origami;
+        ImGui::Combo("Solid", &origami.solid, origamiSolidNames.data(), origamiSolidCount);
+        ImGui::SliderInt("Net", &origami.variant, 0, 11);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Which way the solid is cut open: every number is another net "
+                              "that lies flat without overlapping.");
+        }
+        ImGui::SliderFloat("Frame width", &origami.border, 0.05F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("1 fills the faces; less leaves a frame round a window.");
+        }
+        constexpr std::array origamiColors{"Faces", "Hinge depth", "Near to far by depth"};
+        ImGui::Combo("Colour by", &origami.colorMode, origamiColors.data(),
+                     static_cast<int>(origamiColors.size()));
+        ImGui::SeparatorText("Motion");
+        ImGui::Checkbox("Pause", &origami.paused);
+        ImGui::SliderFloat("Speed", &origami.animationSpeed, 0.0F, 1.5F, "%.2f");
+        ImGui::Checkbox("Fold through", &origami.mirror);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Past the flat net the faces fold on into the mirror solid below; "
+                              "off, they fold back up.");
+        }
+        ImGui::SliderFloat("Stagger", &origami.stagger, 0.0F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Outer hinges follow later: a wave of folding running out from the base.");
+        }
+        ImGui::SliderFloat("Hold closed", &origami.holdClosed, 0.0F, 0.45F, "%.2f");
+        ImGui::SliderFloat("Hold flat", &origami.holdFlat, 0.0F, 0.45F, "%.2f");
+        ImGui::SliderFloat("Flat swirl", &origami.swirl, -6.0F, 6.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("While the net lies flat it twists about its centre, more at the rim.");
+        }
+        ImGui::SliderFloat("Sphere", &origami.sphere, 0.0F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Closed, the faces swell into a sphere through the corners.");
+        }
+        ImGui::SliderFloat("Hinge glow", &origami.hingeGlow, 0.0F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Flat flash", &origami.flatFlash, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Spin", &origami.spin, -2.0F, 2.0F, "%.2f");
+        ImGui::SeparatorText("Points");
+        ImGui::SliderInt("Point budget", &origami.pointBudget, 10000, 1000000, "%d",
+                         ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Point radius (700px)", &origami.pointSize, 0.4F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &origami.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &origami.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &origami.tilt, -90.0F, 90.0F);
+        ImGui::SliderFloat("Zoom", &origami.zoom, 0.25F, 4.0F, "%.2f", ImGuiSliderFlags_Logarithmic);
+        if (origami.colorMode == 2) {
+            ImGui::ColorEdit3("Near color", origami.nearColor.data());
+            ImGui::ColorEdit3("Far color", origami.farColor.data());
+        } else {
+            ImGui::SeparatorText("Face palette");
+            for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::ColorEdit3("##Face color", state_.palette.colors[i].data());
+                ImGui::PopID();
+            }
+        }
+    } else if (braid.geometryMode == 24) {
+        auto& shells = state_.shells;
+        ImGui::SliderInt("Shells", &shells.shells, 2, 8);
+        ImGui::SliderFloat("Outer size", &shells.outerSize, 0.3F, 1.2F, "%.2f");
+        ImGui::SliderFloat("Size ratio", &shells.sizeRatio, 0.3F, 0.9F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Held small enough that turning shells never touch.");
+        }
+        ImGui::SliderFloat("Frame width", &shells.border, 0.05F, 1.0F, "%.2f");
+        ImGui::SliderFloat("Roundness", &shells.roundness, 0.0F, 1.0F, "%.2f");
+        constexpr std::array shellColors{"Palette per shell", "Outer to inner", "One colour"};
+        ImGui::Combo("Colour by", &shells.colorMode, shellColors.data(),
+                     static_cast<int>(shellColors.size()));
+        ImGui::SeparatorText("Motion");
+        ImGui::Checkbox("Pause", &shells.paused);
+        ImGui::SliderFloat("Speed", &shells.animationSpeed, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Hops per cycle", &shells.hops, -3.0F, 3.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Every hop moves each point one shell in; negative plays it backwards: "
+                              "shells crumble outward and the fountain runs into the centre.");
+        }
+        ImGui::SliderFloat("Rest", &shells.rest, 0.0F, 0.9F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Share of each hop with every point at home.");
+        }
+        ImGui::SliderFloat("Crumble spread", &shells.spread, 0.0F, 0.95F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0: a shell lets go all at once; more: point by point.");
+        }
+        ImGui::SliderFloat("Cascade", &shells.cascade, 0.0F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0: every shell at once; 1: the outer shell crumbles first, "
+                              "the fountain from the centre comes last.");
+        }
+        ImGui::SliderFloat("Top first", &shells.order, 0.0F, 1.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0: points let go at random; 1: from the top of their shell down.");
+        }
+        ImGui::SliderFloat("Fall sag", &shells.sag, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Scatter", &shells.scatter, 0.0F, 0.5F, "%.2f");
+        ImGui::SliderFloat("Fountain height", &shells.fountain, 0.0F, 2.5F, "%.2f");
+        ImGui::SliderFloat("Shell turn", &shells.turnRate, -3.0F, 3.0F, "%.2f");
+        ImGui::SeparatorText("Points");
+        ImGui::SliderInt("Points per shell", &shells.pointsPerShell, 2400, 200000, "%d",
+                         ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Point radius (700px)", &shells.pointSize, 0.4F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &shells.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &shells.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &shells.tilt, -90.0F, 90.0F);
+        if (shells.colorMode == 0) {
+            ImGui::SeparatorText("Shell palette");
+            for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::ColorEdit3("##Shell color", state_.palette.colors[i].data());
+                ImGui::PopID();
+            }
+        } else {
+            ImGui::ColorEdit3("Outer color", shells.outerColor.data());
+            if (shells.colorMode == 1) {
+                ImGui::ColorEdit3("Inner color", shells.innerColor.data());
+            }
         }
     } else if (braid.geometryMode == 21) {
         auto& julia = state_.julia;
