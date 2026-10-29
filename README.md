@@ -207,9 +207,14 @@ far side dims with depth instead. Launch it with `--preset flowing-shells`.
 **Metaballs** are balls whose fields add up; the surface is where the sum reaches
 a threshold, so balls that come close reach out with a neck and melt into one blob.
 Every ball carries its own Fibonacci sphere of points; each point keeps its
-direction from the ball's centre and slides out along it to the surface, and shows
-only where its ball's field is the strongest, so merged balls share the skin and a
-swallowed ball's points vanish. There is no depth skin: a point is hidden when the
+direction from the ball's centre and slides out along it to the surface. The density
+stays even: every ball carries **Spare points** times the points it shows at rest,
+and each point stays with the chance that brings the density back to the rest
+density, wherever merging stretches the surface (it spreads along a ray as t^2 over
+the cosine of the slant) and however the balls share it. Shares go as the fields to
+the power **Seam sharpness** and add up to one, so across a seam one ball's points
+hand over gradually to the other's, with no edge; points fade in and out with their
+chance instead of popping. There is no depth skin: a point is hidden when the
 field reaches the threshold anywhere on its straight way to the camera. **Motion**
 picks **Orbits** (Lissajous paths), **Cell division** (one cell parting into balls
 and closing again) or **Lava lamp** (balls rising and sinking in a column).

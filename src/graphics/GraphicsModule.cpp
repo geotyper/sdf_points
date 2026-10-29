@@ -829,7 +829,9 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             }
             const double rounded = loopCycles_ > 0.0F ? std::round(loopCycles_) / loopCycles_ : 1.0;
             const auto balls = metaballScene(ballParams, static_cast<double>(eversionTime_) * rounded);
-            const auto first = metaballFirstPoints(balls, ballParams, metaballs.pointBudget);
+            const auto first = metaballFirstPoints(
+                balls, ballParams,
+                static_cast<int>(static_cast<float>(metaballs.pointBudget) * std::max(metaballs.oversampling, 1.0F)));
             metaballCount = static_cast<int>(balls.size());
             metaballPoints = first.back();
             const auto& colors = state_.palette.colors;
@@ -982,8 +984,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 metaballs.spin,
                 static_cast<float>(metaballs.colorMode),
                 metaballs.reach,
-                0.0F,
-                0.0F,
+                std::max(metaballs.oversampling, 1.0F),
+                metaballs.seamSharpness,
                 loopCycles_,
                 0.0F,
                 0.0F,

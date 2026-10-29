@@ -667,13 +667,27 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Lights up the seams where balls merge.");
         }
+        ImGui::SliderFloat("Seam sharpness", &balls.seamSharpness, 0.5F, 12.0F, "%.1f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("How fast one ball's points hand over to the next across a seam; "
+                              "the density stays even either way.");
+        }
         ImGui::SeparatorText("Motion");
         ImGui::Checkbox("Pause", &balls.paused);
         ImGui::SliderFloat("Speed", &balls.animationSpeed, 0.0F, 1.5F, "%.2f");
         ImGui::SliderFloat("Spin", &balls.spin, -3.0F, 3.0F, "%.2f");
         ImGui::SeparatorText("Points");
-        ImGui::SliderInt("Point budget", &balls.pointBudget, 10000, 1000000, "%d",
+        ImGui::SliderInt("Point budget", &balls.pointBudget, 10000, 600000, "%d",
                          ImGuiSliderFlags_Logarithmic);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Points shown with the balls apart and at rest.");
+        }
+        ImGui::SliderFloat("Spare points", &balls.oversampling, 1.0F, 6.0F, "%.1f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Points carried per point shown: where merging balls stretch the "
+                              "surface the spares fill in, so the density stays even. Up to this "
+                              "much stretch it is exact; past it the points grow instead.");
+        }
         ImGui::SliderFloat("Point radius (700px)", &balls.pointSize, 0.4F, 3.0F, "%.2f");
         ImGui::SliderFloat("Glow", &balls.glow, 0.0F, 1.5F, "%.2f");
         ImGui::SliderFloat("Brightness", &balls.brightness, 0.5F, 2.0F, "%.2f");

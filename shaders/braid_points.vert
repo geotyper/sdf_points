@@ -288,15 +288,19 @@ void main() {
                 ? metaballRay(ball, direction) : -1.0;
         vec3 surface = centre.xyz + t * direction;
         vec3 normal, blend;
-        float lead = 0.0;
+        float share = 0.0, leading = 1.0, keep = 0.0;
         if (t > 0.0) {
-            metaballShade(ball, surface, normal, blend, lead);
+            metaballShade(ball, surface, normal, blend, share, leading);
+            // Along its ray a ball's points spread as t^2 / cos: the chance
+            // to stay that holds the rest density, times the ball's share.
+            float slant = max(dot(normal, direction), 0.15);
+            keep = share * t * t / (max(pc.motion.z, 1.0) * centre.w * centre.w * slant);
         }
-        // Points of the losing ball near a seam shrink away under the winner's.
-        float share = smoothstep(0.9, 1.1, lead);
+        // A point fades in and out with its chance, never pops.
+        float presence = clamp((keep - hashIndex(gl_InstanceIndex, 9u)) / 0.06, 0.0, 1.0);
         vec3 position = pc.shape.x * metaballSpin(surface);
         vec3 viewNormal = toView(metaballSpin(normal));
-        bool hidden = t <= 0.0 || share <= 0.0;
+        bool hidden = t <= 0.0 || presence <= 0.0;
         if (!hidden && fx.view.x < 0.5) {
             hidden = viewNormal.z < -0.05
                   || metaballHidden(surface, metaballToCamera(), 0.1 * centre.w);
@@ -310,10 +314,10 @@ void main() {
         vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
         float diffuse = abs(dot(viewNormal, light));
         float illumination = 0.12 + 0.88 * pow(diffuse, 0.8);
-        // Stretched out over a bulge the points spread: they grow to match.
-        float stretch = clamp(t / centre.w, 1.0, 2.0);
+        // Stretched past what the spare points cover, they grow to match.
         float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
-                           * mix(0.36, 1.0, illumination) * sqrt(stretch) * share;
+                           * mix(0.36, 1.0, illumination) * sqrt(max(keep, 1.0))
+                           * sqrt(presence);
         radiusPixels = max(radiusPixels, 0.30);
         int colorMode = int(pc.motion.x + 0.5);
         float height = smoothstep(-pc.shape.z, pc.shape.z, surface.y);
@@ -321,7 +325,7 @@ void main() {
                   : colorMode == 2 ? mix(pc.style.rgb, pc.wave.rgb, height)
                                    : blend;
         // Where two balls meet the seam lights up.
-        float seam = 1.0 - smoothstep(1.0, 3.0, lead);
+        float seam = 1.0 - smoothstep(0.5, 0.95, leading);
         tint = tint * (1.0 + 1.5 * pc.look.w * seam) + 0.3 * pc.look.w * seam;
         pointColor = tint * illumination * pc.look.z;
         pointFacing = 1.0;

@@ -517,9 +517,11 @@ struct MetaballSettings {
     float zoom{1.0F};
     float spin{0.0F};
     float seamGlow{0.6F};
+    float seamSharpness{3.0F}; // how fast one ball's points hand over to the next across a seam
+    float oversampling{3.0F};  // points carried per point shown at rest: room to stretch
     int colorMode{0};      // 0 blended ball colours, 1 own ball, 2 bottom to top
     float animationSpeed{0.25F};
-    int pointBudget{240000};
+    int pointBudget{160000};   // points shown, with the balls at rest
     float pointSize{1.1F};
     float glow{0.18F};
     float brightness{1.20F};
