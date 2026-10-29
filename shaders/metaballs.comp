@@ -68,7 +68,7 @@ float crowd(vec3 p, int self, out vec3 push) {
         for (int y = -1; y <= 1; ++y) {
             for (int x = -1; x <= 1; ++x) {
                 uint cell = cellOf(base + ivec3(x, y, z));
-                uint count = min(cells[cell], uint(METABALL_CELL - 1));
+                uint count = min(cells[cell] & 0xFFFFu, uint(METABALL_CELL - 1));
                 for (uint k = 0u; k < count; ++k) {
                     int other = int(cells[cell + 1u + k]);
                     if (other == self) continue;
@@ -241,7 +241,11 @@ void main() {
             // A spare particle tries for a gap.
             vec3 candidate;
             vec3 push;
-            if (sampleSurface(index, 22u, candidate) && crowd(candidate, -1, push) < 1.0 - metaballHeader(2).z) {
+            // At most one birth per cell and frame: births all look at the
+            // table as it was, so several landing in one gap at once would
+            // clump into a little crystal.
+            if (sampleSurface(index, 22u, candidate) && crowd(candidate, -1, push) < 1.0 - metaballHeader(2).z &&
+                (atomicOr(cells[cellOf(ivec3(floor(candidate / metaballHeader(1).x)))], 0x10000u) & 0x10000u) == 0u) {
                 p = candidate;
                 alive = true;
                 life = fade;

@@ -34,10 +34,13 @@ const int METABALL = 5;
 const int METABALL_HEADER = METABALL * 24;
 // Particle slots in the shared storage buffer (binding 3): position and
 // life, (alive, 0, 0, 0), scratch position and life. The neighbour table
-// follows, METABALL_CELL uints per cell: a count and the particles.
+// follows, METABALL_CELL uints per cell: a count (with a birth flag above
+// its low 16 bits) and the particles. A cell is two and a half spacings
+// wide and holds about ten particles where the surface cuts it slantwise;
+// 31 slots leave room for two cells sharing a bucket of the hash.
 const int METABALL_PARTICLE = 3;
 const int METABALL_PARTICLE_LIMIT = 600000;
-const int METABALL_CELL = 16;
+const int METABALL_CELL = 32;
 
 vec4 metaball(int ball, int slot) {
     return polytopeData[METABALL * ball + slot];

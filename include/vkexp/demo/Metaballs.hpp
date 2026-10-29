@@ -29,7 +29,7 @@ inline constexpr std::size_t metaballHeaderVec4 = 3;
 // Particles and neighbour table cells (a power of two) in the shared storage
 // buffer; metaballs.glsl holds the same numbers.
 inline constexpr int metaballParticleLimit = 600000;
-inline constexpr std::uint32_t metaballTableCells = 1U << 19U;
+inline constexpr std::uint32_t metaballTableCells = 1U << 18U;
 
 inline constexpr int metaballMotionCount = 6;
 inline constexpr std::array<const char*, metaballMotionCount> metaballMotionNames{
