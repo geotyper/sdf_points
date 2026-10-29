@@ -32,7 +32,7 @@ const vec2 corners[6] = vec2[](vec2(-1, -1), vec2(1, -1), vec2(-1, 1),
 // Places a point on screen after the effects have moved it. Every motion is
 // driven by the scene's own phase, so loops stay seamless.
 vec4 effectClip(vec3 position, vec3 viewNormal, inout float radiusPixels) {
-    float id = float(gl_InstanceIndex);
+    int id = gl_InstanceIndex;
     vec3 offset = vec3(0.0);
     if (fx.drift.x > 0.0) {
         // A slow flow field: neighbouring points wander together.
@@ -44,16 +44,16 @@ vec4 effectClip(vec3 position, vec3 viewNormal, inout float radiusPixels) {
     }
     if (fx.drift.w > 0.0) {
         // Jitter: every point trembles on its own.
-        vec3 own = vec3(hashScalar(id + 0.11), hashScalar(id + 7.3), hashScalar(id + 13.9));
+        vec3 own = vec3(hashIndex(id, 1u), hashIndex(id, 2u), hashIndex(id, 3u));
         offset += fx.drift.w * sin(TAU * own + timePhase(3.0 * fx.drift.z)
                                              * (1.0 + floor(3.0 * own.yzx)));
     }
     // Slide along the surface or away from it, never under the hidden skin.
     offset -= viewNormal * min(dot(offset, viewNormal), 0.0);
-    if (fx.shed.x > 0.0 && hashScalar(1.37 * id + 3.1) < fx.shed.x) {
+    if (fx.shed.x > 0.0 && hashIndex(id, 4u) < fx.shed.x) {
         // A shed point leaves along the normal, shrinking until it is gone,
         // then grows back where it started.
-        float life = fract(timePhase(fx.shed.z) / TAU + hashScalar(id + 5.7));
+        float life = fract(timePhase(fx.shed.z) / TAU + hashIndex(id, 5u));
         float flight = smoothstep(0.0, 0.7, life);
         float fade = life < 0.7 ? 1.0 - flight : smoothstep(0.7, 1.0, life);
         if (life < 0.7) {
@@ -298,7 +298,7 @@ void main() {
         vec3 local = roundedCubePoint(cubeFacePoint(strip / 4, ab));
         // When this point lets go within the hop: by chance or from the top
         // of its shell down, and the outer shells first with the cascade.
-        float order = mix(hashScalar(float(slot) * 0.6180339 + 0.37),
+        float order = mix(hashIndex(slot, 6u),
                           0.5 - 0.5 * local.y / max(length(local), 1e-4), pc.loop.w);
         order = mix(order, float(shell) / float(shells - 1), pc.loop.z);
         float rest = clamp(pc.motion.x, 0.0, 0.9), spread = clamp(pc.motion.y, 0.0, 0.95);
@@ -316,8 +316,8 @@ void main() {
         // throws them up and over.
         position.y += fountain ? pc.loop.y * pc.shape.x * arc
                                : -pc.motion.z * shellSize(float(shell)) * arc;
-        vec3 scatter = vec3(hashScalar(float(gl_InstanceIndex) + 0.11), hashScalar(float(gl_InstanceIndex) + 7.3),
-                            hashScalar(float(gl_InstanceIndex) + 13.9)) * 2.0 - 1.0;
+        vec3 scatter = vec3(hashIndex(gl_InstanceIndex, 1u), hashIndex(gl_InstanceIndex, 2u),
+                            hashIndex(gl_InstanceIndex, 3u)) * 2.0 - 1.0;
         position += pc.motion.w * shellSize(float(shell)) * arc * scatter;
         float level = mix(float(shell), fountain ? 0.0 : float(next), eased);
         vec3 normal = normalize(mix(turnShell(roundedCubeNormal(local), shell),

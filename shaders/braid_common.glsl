@@ -144,6 +144,17 @@ float hashScalar(float value) {
     return fract(sin(value * 127.1) * 43758.5453123);
 }
 
+// For point indices: the sine hash above repeats itself over whole runs of
+// neighbouring indices once they reach the hundreds of thousands (the sine's
+// argument outgrows float precision), so blocks of points jittered and shed
+// together. An integer hash stays random at any index; `salt` picks a stream.
+float hashIndex(int index, uint salt) {
+    uint h = uint(index) * 747796405u + salt * 2891336453u + 1u;
+    h = ((h >> ((h >> 28u) + 4u)) ^ h) * 277803737u;
+    h = (h >> 22u) ^ h;
+    return float(h >> 8u) * (1.0 / 16777216.0);
+}
+
 vec3 sphereHoleDirection(int index, int count) {
     const float goldenAngle = 2.39996322973;
     float y = 1.0 - 2.0 * (float(index) + 0.5) / float(count);
