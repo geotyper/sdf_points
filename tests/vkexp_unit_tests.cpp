@@ -888,13 +888,15 @@ void testFolding() {
     check(vkexp::foldScene(p, net, 0.5 * pi).faces.size() == 48, "Tesseract: eight cubes of six squares");
     // The jitterbug closes into the octahedron, corners on the axes.
     p.figure = 2;
-    for (const auto& c : vkexp::foldScene(p, net, 0.0).faces[0].corners) {
+    const auto octahedron = vkexp::foldScene(p, net, 0.0);
+    for (const auto& c : octahedron.faces[0].corners) {
         const int zeros = (std::abs(c[0]) < 1e-9) + (std::abs(c[1]) < 1e-9) + (std::abs(c[2]) < 1e-9);
         check(zeros == 2, "Jitterbug closes into the octahedron");
     }
     check(vkexp::foldScene(p, net, 0.5 * pi).faces.size() == 20, "Open jitterbug: eight triangles and six split squares");
-    // Dudeney: the triangle's side, then the square's diagonal.
+    // Dudeney, lying flat: the triangle's side, then the square's diagonal.
     p.figure = 3;
+    p.lift = 0.0;
     const auto widest = [&](const vkexp::FoldScene& scene) {
         double most = 0.0;
         for (const auto& a : scene.faces) {

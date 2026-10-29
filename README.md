@@ -204,15 +204,42 @@ part of the hop, and **Fall sag**, **Scatter** and **Fountain height** shape the
 flights. Negative **Hops per cycle** plays it backwards. There is no hiding skin: the
 far side dims with depth instead. Launch it with `--preset flowing-shells`.
 
-**Origami** cuts a Platonic solid (tetrahedron to icosahedron) along a tree of its
-edges and unfolds it on the hinges left: into its flat net and, with **Fold through**,
-on into the mirror solid below the base, then back. **Net** picks among the nets that
-lie flat without overlapping. **Stagger** sends the fold out from the base as a wave,
-**Hold closed** and **Hold flat** linger at either end, **Flat swirl** twists the net
-about its centre while it lies flat, and **Sphere** swells the closed faces onto the
-circumsphere. Hinges light up while they turn (**Hinge glow**) and the whole net
-flashes as it lies flat. **Frame width** below 1 leaves a frame round a window in
-every face. Launch it with `--preset origami`.
+**Origami** is a family of figures made of flat pieces on hinges or creases, picked
+with **Figure**. Each tells the same story once per cycle: closed, open, and with
+**Fold through** on into its mirror, with **Hold closed** and **Hold open** lingering
+at either end, **Open swirl** twisting the open figure about its centre and **Open
+flash** lighting it. **Frame width** below 1 leaves a frame round a window in every
+piece. The CPU poses every piece each frame; each gets points by its largest area
+over the cycle, so none thins out. Launch it with `--preset origami`.
+
+- **Platonic solid net** cuts a solid (tetrahedron to icosahedron) along a tree of its
+  edges and unfolds it on the hinges left into its flat net. **Net** picks among the
+  nets that lie flat without overlapping, **Stagger** sends the fold out from the base
+  as a wave, **Sphere** swells the closed faces onto the circumsphere, and hinges light
+  up while they turn.
+- **Tesseract into Dali's cross** unfolds the eight cubes of the tesseract in 4D, each
+  turning about the square it shares with its parent, into the cross of Dali's
+  *Corpus Hypercubus*, seen in 4D perspective (**4D camera distance**, **4D tilt**,
+  **4D turn**). The hinge squares light up as they turn.
+- **Jitterbug** is Fuller's: eight triangles joined at their corners turn and slide in,
+  from the octahedron through the icosahedron (the twelve gap triangles light up as
+  they become its faces) to the open cuboctahedron, and on to the other-handed
+  icosahedron and octahedron.
+- **Triangle to square (Dudeney)** turns the four hinged pieces of Dudeney's
+  haberdasher half a turn: the equilateral triangle becomes the square of the same
+  area. **Lift** raises the turning pieces so they pass over one another.
+- **Miura-ori** folds a sheet along the Miura pattern (Schenk and Guest's closed form:
+  every panel stays a rigid parallelogram) from flat to a compact block; **Panel
+  angle**, **Panel aspect** and the panel counts shape it. Folded through, mountains
+  and valleys swap.
+- **Flasher** winds a disc of panels round its hub as spiral arms, pleating the rings,
+  and lets it unfurl, freely drawn rather than rigidly folded.
+- **Rotating squares (kirigami)** turns squares joined at their corners alternately
+  both ways: the closed sheet opens into a lattice of windows and, turned on through
+  90 degrees, closes again. **Dome** raises the open sheet into a dome or a bowl.
+- **Rolling sheet** bends a strip without stretching into a cylinder or a cone, or
+  (stretching a little) a Moebius band; **All in turn** changes shape whenever the
+  strip lies flat, so a seamless clip takes three cycles.
 
 **Hopf fibration** draws the circles of the Hopf fibration seen through stereographic
 projection: every circle is linked with every other, and the circles over one latitude
