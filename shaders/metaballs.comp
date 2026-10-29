@@ -1,0 +1,221 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "braid_common.glsl"
+
+// The metaballs' particles (see metaballs.glsl), one step per frame in four
+// stages: clear the neighbour table; carry every particle with the balls,
+// pull it back onto the surface and enter it in the table (or seed them all
+// afresh); push neighbours apart, let crowded particles fade out and give
+// spare ones a birth in the gaps; take the new positions.
+layout(local_size_x = 64) in;
+layout(constant_id = 0) const int STAGE = 0;
+
+layout(set = 0, binding = 2, std430) readonly buffer PolytopeEdges {
+    vec4 polytopeData[];
+};
+layout(set = 0, binding = 3, std430) buffer MetaballParticles {
+    vec4 particles[];
+};
+layout(set = 0, binding = 3, std430) buffer MetaballCells {
+    uint cells[];
+};
+
+#include "metaballs.glsl"
+
+const uint CELLS = uint(METABALL_PARTICLE_LIMIT * METABALL_PARTICLE * 4);
+
+uint frameNumber() {
+    return uint(metaballHeader(0).y + 0.5);
+}
+
+// A fresh random number every frame, attempt and stream.
+float chance(int index, uint attempt, uint stream) {
+    return hashIndex(index, frameNumber() * 4096u + attempt * 8u + stream);
+}
+
+uint cellOf(ivec3 cell) {
+    uint h = (uint(cell.x) * 73856093u) ^ (uint(cell.y) * 19349663u) ^ (uint(cell.z) * 83492791u);
+    return CELLS + (h & (uint(metaballHeader(1).z + 0.5) - 1u)) * uint(METABALL_CELL);
+}
+
+// The particle pulled back onto the surface along the field's gradient;
+// false when there is no surface near.
+bool settle(inout vec3 p) {
+    float threshold = pc.shape.y;
+    float spacing = metaballHeader(1).w;
+    for (int k = 0; k < 4; ++k) {
+        vec3 gradient;
+        float f = metaballField(p, gradient);
+        float g = dot(gradient, gradient);
+        if (g < 1e-10) return false;
+        vec3 step = (f - threshold) * gradient / g;
+        float length2 = dot(step, step);
+        if (length2 > 16.0 * spacing * spacing) step *= 4.0 * spacing * inversesqrt(length2);
+        p -= step;
+    }
+    return abs(metaballField(p) - threshold) < 0.02 * threshold;
+}
+
+// How crowded `p` is against the rest density (1 even), and the push away
+// from its neighbours.
+float crowd(vec3 p, int self, out vec3 push) {
+    float reach = metaballHeader(1).x;
+    ivec3 base = ivec3(floor(p / reach));
+    float weight = 0.0;
+    push = vec3(0.0);
+    for (int z = -1; z <= 1; ++z) {
+        for (int y = -1; y <= 1; ++y) {
+            for (int x = -1; x <= 1; ++x) {
+                uint cell = cellOf(base + ivec3(x, y, z));
+                uint count = min(cells[cell], uint(METABALL_CELL - 1));
+                for (uint k = 0u; k < count; ++k) {
+                    int other = int(cells[cell + 1u + k]);
+                    if (other == self) continue;
+                    vec3 d = p - particles[METABALL_PARTICLE * other].xyz;
+                    float r2 = dot(d, d);
+                    if (r2 >= reach * reach || r2 < 1e-14) continue;
+                    float w = 1.0 - r2 / (reach * reach);
+                    weight += w * w;
+                    push += w * w * d * inversesqrt(r2);
+                }
+            }
+        }
+    }
+    return weight / metaballHeader(1).y;
+}
+
+// A point on the surface where every stretch of it is equally likely: a
+// ball picked by its area, a direction from its centre out to the surface,
+// kept with the chance that undoes the stretch along the ray and with the
+// ball's share of the surface there.
+bool sampleSurface(int index, uint attempt, out vec3 p) {
+    int ball = metaballOf(chance(index, attempt, 0u));
+    float z = 2.0 * chance(index, attempt, 1u) - 1.0;
+    float around = TAU * chance(index, attempt, 2u);
+    vec3 direction = vec3(sqrt(max(0.0, 1.0 - z * z)) * cos(around), z,
+                          sqrt(max(0.0, 1.0 - z * z)) * sin(around));
+    float t = metaballRay(ball, direction);
+    if (t <= 0.0) return false;
+    vec4 b = metaball(ball, 0);
+    p = b.xyz + t * direction;
+    float sharpness = max(pc.motion.w, 0.5);
+    float own = 0.0, weights = 0.0;
+    vec3 gradient = vec3(0.0);
+    for (int i = 0; i < metaballCount(); ++i) {
+        vec4 other = metaball(i, 0);
+        float far = pc.motion.y * other.w;
+        vec3 d = p - other.xyz;
+        float q = 1.0 - dot(d, d) / (far * far);
+        if (q <= 0.0) continue;
+        gradient += q * q * d / (far * far);
+        float weight = pow(q * q * q, sharpness);
+        weights += weight;
+        if (i == ball) own = weight;
+    }
+    float slant = max(dot(normalize(gradient + vec3(1e-9, 0.0, 0.0)), direction), 0.15);
+    float keep = own / max(weights, 1e-30) * t * t / (max(pc.motion.z, 1.0) * b.w * b.w * slant);
+    return chance(index, attempt, 3u) < keep;
+}
+
+void main() {
+    int index = int(gl_GlobalInvocationID.x);
+    vec4 header = metaballHeader(0);
+    if (STAGE == 0) {
+        if (index < int(metaballHeader(1).z + 0.5)) cells[CELLS + uint(index * METABALL_CELL)] = 0u;
+        return;
+    }
+    if (index >= int(header.z + 0.5)) return;
+    int slot = METABALL_PARTICLE * index;
+    vec4 particle = particles[slot];
+    bool alive = particles[slot + 1].x > 0.5;
+    float fade = header.w;
+
+    if (STAGE == 1) {
+        vec3 p = particle.xyz;
+        float life = particle.w;
+        if (header.x > 0.5) {
+            // Seed afresh: the first share of the particles, spread evenly.
+            alive = false;
+            life = 0.0;
+            if (index < int(metaballHeader(2).x + 0.5)) {
+                for (uint attempt = 0u; attempt < 16u && !alive; ++attempt) {
+                    alive = sampleSurface(index, attempt, p);
+                }
+                life = alive ? 1.0 : 0.0;
+            }
+        } else if (alive || life > 0.0) {
+            // Carried by the balls, each as much as its field holds here.
+            vec3 move = vec3(0.0);
+            float total = 0.0;
+            for (int i = 0; i < metaballCount(); ++i) {
+                vec4 now = metaball(i, 0), before = metaball(i, 3);
+                float far = pc.motion.y * before.w;
+                vec3 d = p - before.xyz;
+                float q = 1.0 - dot(d, d) / (far * far);
+                if (q <= 0.0) continue;
+                float k = q * q * q;
+                move += k * (now.xyz - before.xyz + (now.w / before.w - 1.0) * d);
+                total += k;
+            }
+            p += move / max(total, 1e-12);
+            if (!settle(p)) {
+                alive = false;
+                life = 0.0;
+            }
+        }
+        particles[slot] = vec4(p, life);
+        particles[slot + 1] = vec4(alive ? 1.0 : 0.0, 0.0, 0.0, 0.0);
+        if (alive) {
+            uint cell = cellOf(ivec3(floor(p / metaballHeader(1).x)));
+            uint at = atomicAdd(cells[cell], 1u);
+            if (at < uint(METABALL_CELL - 1)) cells[cell + 1u + at] = uint(index);
+        }
+        return;
+    }
+
+    if (STAGE == 2) {
+        vec3 p = particle.xyz;
+        float life = particle.w;
+        float spacing = metaballHeader(1).w;
+        if (alive) {
+            vec3 push;
+            float crowded = crowd(p, index, push);
+            vec3 gradient;
+            metaballField(p, gradient);
+            vec3 normal = normalize(gradient + vec3(1e-9, 0.0, 0.0));
+            push = metaballHeader(2).y * spacing * (push - normal * dot(push, normal));
+            float length2 = dot(push, push);
+            if (length2 > 0.25 * spacing * spacing) push *= 0.5 * spacing * inversesqrt(length2);
+            p += push;
+            // Too crowded: now and then one fades out.
+            if (crowded > 1.2 && chance(index, 20u, 0u) < 0.2 * (crowded - 1.2)) {
+                alive = false;
+            }
+            life = alive ? min(life + fade, 1.0) : life;
+        } else if (life > 0.0) {
+            life = max(life - fade, 0.0);
+        } else if (chance(index, 21u, 0u) < 0.08) {
+            // A spare particle tries for a gap.
+            vec3 candidate;
+            vec3 push;
+            if (sampleSurface(index, 22u, candidate) && crowd(candidate, -1, push) < 0.8) {
+                p = candidate;
+                alive = true;
+                life = fade;
+            }
+        }
+        particles[slot + 1] = vec4(alive ? 1.0 : 0.0, 0.0, 0.0, 0.0);
+        particles[slot + 2] = vec4(p, life);
+        return;
+    }
+
+    // STAGE 3: the pushed positions, back on the surface.
+    vec4 next = particles[slot + 2];
+    vec3 p = next.xyz;
+    if (alive && !settle(p)) {
+        alive = false;
+        next.w = 0.0;
+        particles[slot + 1] = vec4(0.0);
+    }
+    particles[slot] = vec4(p, next.w);
+}

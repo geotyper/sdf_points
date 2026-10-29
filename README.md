@@ -206,22 +206,27 @@ far side dims with depth instead. Launch it with `--preset flowing-shells`.
 
 **Metaballs** are balls whose fields add up; the surface is where the sum reaches
 a threshold, so balls that come close reach out with a neck and melt into one blob.
-Every ball carries its own Fibonacci sphere of points; each point keeps its
-direction from the ball's centre and slides out along it to the surface. The density
-stays even: every ball carries **Spare points** times the points it shows at rest,
-and each point stays with the chance that brings the density back to the rest
-density, wherever merging stretches the surface (it spreads along a ray as t^2 over
-the cosine of the slant) and however the balls share it. Shares go as the fields to
-the power **Seam sharpness** and add up to one, so across a seam one ball's points
-hand over gradually to the other's, with no edge; points fade in and out with their
-chance instead of popping. There is no depth skin: a point is hidden when the
-field reaches the threshold anywhere on its straight way to the camera. **Motion**
-picks **Orbits** (Lissajous paths), **Cell division** (one cell parting into balls
-and closing again) or **Lava lamp** (balls rising and sinking in a column).
-**Field reach** sets how far the balls reach for each other, **Seam glow** lights the
-seams where they merge, and **Colour by** blends the balls' palette colours across
-the seams, keeps each ball's own, or runs bottom to top. Launch it with
-`--preset metaballs`.
+The points are particles living on the surface (after Witkin and Heckbert's
+particles on implicit surfaces), kept from frame to frame by a compute pass. Every
+frame each particle is carried along with a blend of the balls' motions, each ball
+weighted by its field there, so on a neck between two balls everything flows by
+the same law; it is pulled back onto the surface along the field's gradient and
+pushed away from its neighbours (found through a hashed grid), which evens the
+spacing out. Where particles crowd, as when merging shrinks the surface, some fade
+out; where the surface stretches or a ball splits off, spare particles are born in
+the gaps, each placed where every stretch of the surface is as likely. So the
+density stays even however the surface merges, stretches or splits. There is no
+depth skin: a point is hidden when the field reaches the threshold anywhere on its
+straight way to the camera. **Motion** picks **Orbits** (Lissajous paths), **Cell
+division** (one cell parting into balls and closing again) or **Lava lamp** (balls
+rising and sinking in a column). **Field reach** sets how far the balls reach for
+each other, **Seam glow** lights the seams where they merge, and **Colour by**
+blends the balls' palette colours across the seams, takes the strongest ball's, or
+runs bottom to top. **Point budget** sets the density (over the balls' area apart),
+**Push apart** how hard neighbours push, **Fade time** how fast particles fade out
+and in, and **Seed afresh** starts the particles over. The particles keep their
+state, so a recorded loop does not close exactly: the balls come back, the
+particles only nearly. Launch it with `--preset metaballs`.
 
 **Origami** is a family of figures made of flat pieces on hinges or creases, picked
 with **Figure**. Each tells the same story once per cycle: closed, open, and with

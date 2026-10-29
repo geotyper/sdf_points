@@ -1,26 +1,42 @@
 // Metaballs (mode 25): balls whose fields add up, the surface where the sum
-// reaches a threshold (Metaballs.hpp moves the balls on the CPU). Every ball
-// carries a Fibonacci sphere of points; a point keeps its direction from the
-// ball's centre and slides out along it to the surface. It shows only where
-// even density: every ball carries `oversampling` times the points it needs
-// at rest, and each point stays with the chance that brings the density
-// back to the rest density, wherever the surface has stretched and however
-// the balls share it. There is no depth skin: a
+// reaches a threshold (Metaballs.hpp moves the balls on the CPU). The points
+// are particles living on the surface (after Witkin and Heckbert), kept from
+// frame to frame by metaballs.comp: each frame they are carried along with a
+// blend of the balls' motions, weighted by the balls' fields, so on a neck
+// between two balls everything flows by the same law; pulled back onto the
+// surface; pushed apart by their neighbours; and where they crowd they fade
+// out, while spare particles are born in the gaps, so the density stays even
+// however the surface stretches, merges or splits. There is no depth skin: a
 // point is hidden when the field reaches the threshold anywhere on its way
 // to the camera.
 //
-// Push constants: shape = size, threshold, scene reach, balls; points = all
-// points, 0, pixel radius, 0; look = tilt, glow, brightness, seam
-// glow; style.rgb = bottom colour, w = 25; wave.rgb = top colour, w = spin
-// rate; motion = colour mode (0 blended, 1 own ball, 2 bottom to top), field
-// reach in radii, oversampling, seam sharpness; loop = cycles, 0, 0, zoom.
-// The polytope storage buffer holds three vec4 per ball: centre and radius,
-// colour and first point, (points, 0, 0, 0).
+// Push constants: shape = size, threshold, scene reach, balls; points =
+// particles, 0, pixel radius, 0; look = tilt, glow, brightness, seam glow;
+// style.rgb = bottom colour, w = 25; wave.rgb = top colour, w = spin rate;
+// motion = colour mode (0 blended, 1 own ball, 2 bottom to top), field reach
+// in radii, oversampling of new particles, seam sharpness; loop = cycles,
+// 0, 0, zoom.
+// The polytope storage buffer holds four vec4 per ball (centre and radius,
+// colour and where its share of the area starts, 0, centre and radius the
+// frame before), then from METABALL_HEADER: (reset, frame number, particles,
+// fade step), (neighbour reach, neighbours' weight at the rest density, hash
+// table cells, spacing), (particles to start with, push strength, 0, 0).
 
-const int METABALL = 3;
+const int METABALL = 4;
+const int METABALL_HEADER = 4 * 24;
+// Particle slots in the shared storage buffer (binding 3): position and
+// life, (alive, 0, 0, 0), scratch position and life. The neighbour table
+// follows, METABALL_CELL uints per cell: a count and the particles.
+const int METABALL_PARTICLE = 3;
+const int METABALL_PARTICLE_LIMIT = 600000;
+const int METABALL_CELL = 16;
 
 vec4 metaball(int ball, int slot) {
     return polytopeData[METABALL * ball + slot];
+}
+
+vec4 metaballHeader(int slot) {
+    return polytopeData[METABALL_HEADER + slot];
 }
 
 int metaballCount() {
@@ -31,28 +47,40 @@ float metaballSpan() {
     return pc.shape.x * pc.shape.z * 1.08 / max(pc.loop.w, 0.05);
 }
 
-float metaballKernel(int ball, vec3 p) {
-    vec4 b = metaball(ball, 0);
-    float far = pc.motion.y * b.w;
-    vec3 d = p - b.xyz;
-    float q = 1.0 - dot(d, d) / (far * far);
-    return q > 0.0 ? q * q * q : 0.0;
-}
-
 float metaballField(vec3 p) {
     float sum = 0.0;
     for (int i = 0; i < metaballCount(); ++i) {
-        sum += metaballKernel(i, p);
+        vec4 b = metaball(i, 0);
+        float far = pc.motion.y * b.w;
+        vec3 d = p - b.xyz;
+        float q = 1.0 - dot(d, d) / (far * far);
+        sum += q > 0.0 ? q * q * q : 0.0;
     }
     return sum;
 }
 
-// The ball holding point `index`: the last one starting at or before it.
-int metaballOf(int index) {
+// The field and its gradient.
+float metaballField(vec3 p, out vec3 gradient) {
+    float sum = 0.0;
+    gradient = vec3(0.0);
+    for (int i = 0; i < metaballCount(); ++i) {
+        vec4 b = metaball(i, 0);
+        float far = pc.motion.y * b.w;
+        vec3 d = p - b.xyz;
+        float q = 1.0 - dot(d, d) / (far * far);
+        if (q <= 0.0) continue;
+        sum += q * q * q;
+        gradient -= 6.0 * q * q * d / (far * far);
+    }
+    return sum;
+}
+
+// The ball whose share of the total area holds `u` (0..1).
+int metaballOf(float u) {
     int low = 0, high = metaballCount() - 1;
     while (low < high) {
         int middle = (low + high + 1) / 2;
-        if (metaball(middle, 1).w <= float(index) + 0.5) {
+        if (metaball(middle, 1).w <= u) {
             low = middle;
         } else {
             high = middle - 1;
@@ -88,15 +116,14 @@ float metaballRay(int ball, vec3 direction) {
 }
 
 // At `p`: the outward normal, the blend of the balls' colours by their
-// fields, `ball`'s share of the surface here and the largest share of any
-// ball. Shares go as the fields to the power `sharpness` and add up to 1, so
-// across a seam one ball's points hand over gradually to the other's.
-void metaballShade(int ball, vec3 p, out vec3 normal, out vec3 blend, out float share,
-                   out float leading) {
+// fields, the strongest ball, and how far it leads: the largest of the
+// shares that go as the fields to the power `sharpness` and add up to 1.
+void metaballShade(vec3 p, out vec3 normal, out vec3 blend, out int strongest, out float leading) {
     vec3 gradient = vec3(0.0);
     blend = vec3(0.0);
-    float total = 0.0, own = 0.0, weights = 0.0, strongest = 0.0;
+    float total = 0.0, weights = 0.0, most = 0.0;
     float sharpness = max(pc.motion.w, 0.5);
+    strongest = 0;
     for (int i = 0; i < metaballCount(); ++i) {
         vec4 b = metaball(i, 0);
         float far = pc.motion.y * b.w;
@@ -109,21 +136,14 @@ void metaballShade(int ball, vec3 p, out vec3 normal, out vec3 blend, out float 
         total += k;
         float weight = pow(k, sharpness);
         weights += weight;
-        strongest = max(strongest, weight);
-        if (i == ball) own = weight;
+        if (weight > most) {
+            most = weight;
+            strongest = i;
+        }
     }
     normal = normalize(gradient + vec3(1e-7, 0.0, 0.0));
     blend /= max(total, 1e-6);
-    share = own / max(weights, 1e-30);
-    leading = strongest / max(weights, 1e-30);
-}
-
-// A ball's own turn, so the point lattices of neighbours never line up.
-vec3 metaballTurn(vec3 direction, int ball) {
-    float identity = float(ball) * 3.17 + 0.41;
-    vec3 axis = normalize(vec3(hashScalar(identity + 1.3), hashScalar(identity + 7.1),
-                               hashScalar(identity + 13.7)) * 2.0 - 1.0 + vec3(0.001, 0.002, 0.003));
-    return rotateAroundAxis(direction, axis, TAU * hashScalar(identity + 23.9));
+    leading = most / max(weights, 1e-30);
 }
 
 // The whole figure spins about the vertical, then scales.

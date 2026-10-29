@@ -74,6 +74,7 @@ set(SHADER_SOURCES
     experiment.comp
     game_of_life.comp
     sections.comp
+    metaballs.comp
 )
 
 set(SHADER_BINARIES)

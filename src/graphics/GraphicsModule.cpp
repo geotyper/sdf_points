@@ -53,7 +53,7 @@ void GraphicsModule::onAttach(AppContext& context) {
         VkDescriptorSetLayoutBinding{1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
                                      VK_SHADER_STAGE_VERTEX_BIT, nullptr},
         VkDescriptorSetLayoutBinding{2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
-                                     VK_SHADER_STAGE_VERTEX_BIT, nullptr},
+                                     VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         VkDescriptorSetLayoutBinding{3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
                                      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT,
                                      nullptr},
@@ -243,6 +243,20 @@ void GraphicsModule::onAttach(AppContext& context) {
                                  sectionPipeline_.put(device)) != VK_SUCCESS) {
         throw std::runtime_error("Unable to create section pipeline");
     }
+    // The metaballs' particle step: the same shader, one pipeline per stage.
+    const auto metaballShader = loadShaderModule(device, VKEXP_SHADER_DIR "/metaballs.comp.spv");
+    for (std::size_t stage = 0; stage < metaballPipelines_.size(); ++stage) {
+        const auto stageIndex = static_cast<std::int32_t>(stage);
+        const VkSpecializationMapEntry entry{0, 0, sizeof(stageIndex)};
+        const VkSpecializationInfo specialization{1, &entry, sizeof(stageIndex), &stageIndex};
+        VkComputePipelineCreateInfo metaballInfo = sectionInfoCreate;
+        metaballInfo.stage.module = metaballShader.get();
+        metaballInfo.stage.pSpecializationInfo = &specialization;
+        if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &metaballInfo, nullptr,
+                                     metaballPipelines_[stage].put(device)) != VK_SUCCESS) {
+            throw std::runtime_error("Unable to create metaball pipeline");
+        }
+    }
     createRenderTarget(context, state_.viewport.extent);
 }
 
@@ -293,6 +307,7 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
     auto cpuScope = context.profiler.cpu().scope(metric_);
     const auto& recording = state_.loop.recording;
     loopCycles_ = 0.0F;
+    frameSeconds_ = recording ? 1.0F / 30.0F : std::clamp(frame.deltaSeconds, 1.0F / 240.0F, 0.1F);
     if (recording) {
         // Exact steps: after the recorded frames the scene is back at its start.
         loopCycles_ = static_cast<float>(recording->phaseCycles);
@@ -804,21 +819,22 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             polytope_.write(palette.data(), sizeof(palette));
             polytopeKey_ = {-1, -1, -1};
         }
-        // Metaballs: the balls moved on the CPU, three vec4 each with their
-        // share of the points, in the polytope buffer.
+        // Metaballs: the balls moved on the CPU, four vec4 each with the
+        // place they had the frame before, then the particles' settings, in
+        // the polytope buffer; metaballs.comp carries the particles.
         const auto& metaballs = state_.metaballs;
         const bool metaballMode = braid.geometryMode == 25;
-        int metaballCount = 0, metaballPoints = 0;
-        MetaballParams ballParams;
-        ballParams.motion = metaballs.motion;
-        ballParams.balls = metaballs.balls;
-        ballParams.radius = metaballs.radius;
-        ballParams.variation = metaballs.variation;
-        ballParams.reach = metaballs.reach;
-        ballParams.spread = metaballs.spread;
-        ballParams.breathe = metaballs.breathe;
-        ballParams.seed = metaballs.seed;
+        int metaballCount = 0, metaballParticles = 0;
         if (metaballMode) {
+            MetaballParams ballParams;
+            ballParams.motion = metaballs.motion;
+            ballParams.balls = metaballs.balls;
+            ballParams.radius = metaballs.radius;
+            ballParams.variation = metaballs.variation;
+            ballParams.reach = metaballs.reach;
+            ballParams.spread = metaballs.spread;
+            ballParams.breathe = metaballs.breathe;
+            ballParams.seed = metaballs.seed;
             const std::vector<double> shapeKey{
                 static_cast<double>(metaballs.motion), static_cast<double>(metaballs.balls),
                 metaballs.radius, metaballs.variation, metaballs.reach, metaballs.spread,
@@ -829,26 +845,63 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             }
             const double rounded = loopCycles_ > 0.0F ? std::round(loopCycles_) / loopCycles_ : 1.0;
             const auto balls = metaballScene(ballParams, static_cast<double>(eversionTime_) * rounded);
-            const auto first = metaballFirstPoints(
-                balls, ballParams,
-                static_cast<int>(static_cast<float>(metaballs.pointBudget) * std::max(metaballs.oversampling, 1.0F)));
             metaballCount = static_cast<int>(balls.size());
-            metaballPoints = first.back();
+            const int budget = std::clamp(metaballs.pointBudget, 1000, metaballParticleLimit * 2 / 3);
+            metaballParticles = std::min(budget * 3 / 2, metaballParticleLimit);
+            // Seeded afresh when the figure, the budget or the mode changes,
+            // when asked, or when the balls jump too far for one step.
+            std::vector<double> seedKey = shapeKey;
+            seedKey.push_back(static_cast<double>(budget));
+            seedKey.push_back(static_cast<double>(metaballs.restart));
+            bool reset = seedKey != metaballSeedKey_ || lastGeometryMode_ != 25 ||
+                         metaballBefore_.size() != balls.size();
+            if (!reset) {
+                for (std::size_t i = 0; i < balls.size(); ++i) {
+                    for (std::size_t k = 0; k < 3; ++k) {
+                        reset = reset || std::abs(balls[i].centre[k] - metaballBefore_[i].centre[k]) >
+                                             0.5 * balls[i].radius;
+                    }
+                }
+            }
+            metaballSeedKey_ = seedKey;
+            if (reset) {
+                metaballBefore_ = balls;
+            }
+            const auto starts = metaballAreaStarts(balls);
+            const double spacing = metaballSpacing(balls, budget);
             const auto& colors = state_.palette.colors;
-            std::vector<float> data(balls.size() * metaballVec4 * 4U, 0.0F);
+            std::vector<float> data((static_cast<std::size_t>(metaballLimit) * metaballVec4 + metaballHeaderVec4) * 4U,
+                                    0.0F);
             for (std::size_t i = 0; i < balls.size(); ++i) {
                 float* out = data.data() + i * metaballVec4 * 4U;
                 for (std::size_t k = 0; k < 3; ++k) {
                     out[k] = static_cast<float>(balls[i].centre[k]);
                     out[4 + k] = colors[i % colors.size()][k];
+                    out[12 + k] = static_cast<float>(metaballBefore_[i].centre[k]);
                 }
                 out[3] = static_cast<float>(balls[i].radius);
-                out[7] = static_cast<float>(first[i]);
-                out[8] = static_cast<float>(first[i + 1] - first[i]);
+                out[7] = static_cast<float>(starts[i]);
+                out[15] = static_cast<float>(metaballBefore_[i].radius);
             }
+            float* header = data.data() + static_cast<std::size_t>(metaballLimit) * metaballVec4 * 4U;
+            // Neighbours within two spacings; their summed weight
+            // (1 - r^2 / reach^2)^2 at the rest density is pi reach^2 / 3 per spacing^2.
+            const double reach = 2.0 * spacing;
+            header[0] = reset ? 1.0F : 0.0F;
+            header[1] = static_cast<float>(metaballFrame_++ % 1000000U);
+            header[2] = static_cast<float>(metaballParticles);
+            header[3] = frameSeconds_ / std::max(metaballs.fadeSeconds, 0.02F);
+            header[4] = static_cast<float>(reach);
+            header[5] = static_cast<float>(3.14159265358979 * reach * reach / (3.0 * spacing * spacing));
+            header[6] = static_cast<float>(metaballTableCells);
+            header[7] = static_cast<float>(spacing);
+            header[8] = static_cast<float>(budget);
+            header[9] = metaballs.push;
             polytope_.write(data.data(), data.size() * sizeof(float));
             polytopeKey_ = {-1, -1, -1};
+            metaballBefore_ = balls;
         }
+        lastGeometryMode_ = braid.geometryMode;
         std::array<float, 32> pushConstants{};
         if (braid.geometryMode == 16) {
             pushConstants = {
@@ -966,7 +1019,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 static_cast<float>(metaballThreshold(metaballs.reach)),
                 static_cast<float>(metaballBound_),
                 static_cast<float>(metaballCount),
-                static_cast<float>(metaballPoints),
+                static_cast<float>(metaballParticles),
                 0.0F,
                 metaballs.pointSize,
                 0.0F,
@@ -1607,6 +1660,46 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 std::copy(ridges.begin(), ridges.end(), pushConstants.begin() + 29);
             }
         }
+        if (metaballMode) {
+            // The particles' step, outside the rendering scope like the
+            // sections: after the last frame's points have read them, before
+            // this frame's do, every stage seeing the one before.
+            vkCmdEndRendering(commands);
+            VkMemoryBarrier2 particlesFree{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+            particlesFree.srcStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+            particlesFree.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            VkDependencyInfo particleDependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            particleDependency.memoryBarrierCount = 1;
+            particleDependency.pMemoryBarriers = &particlesFree;
+            vkCmdPipelineBarrier2(commands, &particleDependency);
+            vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE, sectionLayout_, 0, 1,
+                                    &depthSet_, 0, nullptr);
+            vkCmdPushConstants(commands, sectionLayout_, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                               static_cast<std::uint32_t>(sizeof(pushConstants)),
+                               pushConstants.data());
+            VkMemoryBarrier2 stageDone{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+            stageDone.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            stageDone.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+            stageDone.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            stageDone.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+            const auto particleGroups = (static_cast<std::uint32_t>(metaballParticles) + 63U) / 64U;
+            for (std::size_t stage = 0; stage < metaballPipelines_.size(); ++stage) {
+                if (stage > 0) {
+                    particleDependency.pMemoryBarriers = &stageDone;
+                    vkCmdPipelineBarrier2(commands, &particleDependency);
+                }
+                vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, metaballPipelines_[stage]);
+                vkCmdDispatch(commands, stage == 0 ? (metaballTableCells + 63U) / 64U : particleGroups, 1, 1);
+            }
+            VkMemoryBarrier2 particlesReady{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+            particlesReady.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            particlesReady.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+            particlesReady.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+            particlesReady.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+            particleDependency.pMemoryBarriers = &particlesReady;
+            vkCmdPipelineBarrier2(commands, &particleDependency);
+            vkCmdBeginRendering(commands, &rendering);
+        }
         if (sectionMode) {
             // March the rays outside the rendering scope, after the last frame's
             // points have read the hits, and before this frame's do.
@@ -1776,7 +1869,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
         } else if (shellMode) {
             vkCmdDraw(commands, 6, static_cast<std::uint32_t>(shellCount * perShell), 0, 0);
         } else if (metaballMode) {
-            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(metaballPoints), 0, 0);
+            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(metaballParticles), 0, 0);
         } else if (fourSurfaceMode) {
             vkCmdDraw(commands, 6,
                       static_cast<std::uint32_t>(surfacePatches * surfaceGrid.columns *
@@ -1953,6 +2046,9 @@ void GraphicsModule::onDetach(AppContext&) {
     surfacePipeline_.reset();
     tubePipeline_.reset();
     sectionPipeline_.reset();
+    for (auto& stage : metaballPipelines_) {
+        stage.reset();
+    }
     pipelineLayout_.reset();
     sectionLayout_.reset();
     depthSet_ = VK_NULL_HANDLE;

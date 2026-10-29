@@ -888,9 +888,15 @@ void testMetaballs() {
         check(drift < 1e-9, "Metaball motion loops");
         const double bound = vkexp::metaballBound(params);
         check(bound > params.radius && bound < 4.0, "Metaball bound");
-        const auto first = vkexp::metaballFirstPoints(start, params, 100000);
-        check(first.size() == start.size() + 1 && std::abs(first.back() - 100000) < 200,
-              "Metaball points shared out");
+        const auto starts = vkexp::metaballAreaStarts(start);
+        check(starts.size() == start.size() && starts.front() == 0.0 &&
+                  std::is_sorted(starts.begin(), starts.end()) && starts.back() < 1.0,
+              "Metaball area shares");
+        // Four balls of radius 1 hold 4 * 4 pi points at spacing 1.
+        const std::vector<vkexp::Metaball> unit(4, vkexp::Metaball{{0.0, 0.0, 0.0}, 1.0});
+        check(std::abs(vkexp::metaballSpacing(unit, static_cast<int>(std::lround(16.0 * 3.14159265358979))) - 1.0) <
+                  1e-2,
+              "Metaball spacing");
     }
 }
 

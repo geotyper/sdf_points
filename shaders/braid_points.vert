@@ -272,38 +272,22 @@ void main() {
     }
 
     if (metaballMode()) {
-        // Every ball's Fibonacci sphere, slid out along its directions to
-        // the surface; shown where the ball leads, hidden by the field
-        // between it and the camera.
-        int ball = metaballOf(gl_InstanceIndex);
-        vec4 centre = metaball(ball, 0);
-        int first = int(metaball(ball, 1).w + 0.5);
-        int count = max(int(metaball(ball, 2).x + 0.5), 1);
-        int local = gl_InstanceIndex - first;
-        float y = 1.0 - 2.0 * (float(local) + 0.5) / float(count);
-        float around = 2.39996322973 * float(local);
-        vec3 direction = metaballTurn(vec3(sqrt(max(0.0, 1.0 - y * y)) * cos(around), y,
-                                           sqrt(max(0.0, 1.0 - y * y)) * sin(around)), ball);
-        float t = local < count && gl_InstanceIndex < int(pc.points.x + 0.5)
-                ? metaballRay(ball, direction) : -1.0;
-        vec3 surface = centre.xyz + t * direction;
+        // A particle kept on the surface by metaballs.comp: its place and
+        // how far it has faded in, shaded by the field there.
+        vec4 particle = gl_InstanceIndex < int(pc.points.x + 0.5)
+                      ? sectionHits[METABALL_PARTICLE * gl_InstanceIndex] : vec4(0.0);
+        vec3 surface = particle.xyz;
+        float life = particle.w;
         vec3 normal, blend;
-        float share = 0.0, leading = 1.0, keep = 0.0;
-        if (t > 0.0) {
-            metaballShade(ball, surface, normal, blend, share, leading);
-            // Along its ray a ball's points spread as t^2 / cos: the chance
-            // to stay that holds the rest density, times the ball's share.
-            float slant = max(dot(normal, direction), 0.15);
-            keep = share * t * t / (max(pc.motion.z, 1.0) * centre.w * centre.w * slant);
-        }
-        // A point fades in and out with its chance, never pops.
-        float presence = clamp((keep - hashIndex(gl_InstanceIndex, 9u)) / 0.06, 0.0, 1.0);
+        int strongest;
+        float leading;
+        metaballShade(surface, normal, blend, strongest, leading);
         vec3 position = pc.shape.x * metaballSpin(surface);
         vec3 viewNormal = toView(metaballSpin(normal));
-        bool hidden = t <= 0.0 || presence <= 0.0;
+        bool hidden = life <= 0.0;
         if (!hidden && fx.view.x < 0.5) {
             hidden = viewNormal.z < -0.05
-                  || metaballHidden(surface, metaballToCamera(), 0.1 * centre.w);
+                  || metaballHidden(surface, metaballToCamera(), 0.1 * metaball(strongest, 0).w);
         }
         if (hidden) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -314,20 +298,18 @@ void main() {
         vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
         float diffuse = abs(dot(viewNormal, light));
         float illumination = 0.12 + 0.88 * pow(diffuse, 0.8);
-        // Stretched past what the spare points cover, they grow to match.
         float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
-                           * mix(0.36, 1.0, illumination) * sqrt(max(keep, 1.0))
-                           * sqrt(presence);
+                           * mix(0.36, 1.0, illumination) * sqrt(life);
         radiusPixels = max(radiusPixels, 0.30);
         int colorMode = int(pc.motion.x + 0.5);
         float height = smoothstep(-pc.shape.z, pc.shape.z, surface.y);
-        vec3 tint = colorMode == 1 ? metaball(ball, 1).rgb
+        vec3 tint = colorMode == 1 ? metaball(strongest, 1).rgb
                   : colorMode == 2 ? mix(pc.style.rgb, pc.wave.rgb, height)
                                    : blend;
         // Where two balls meet the seam lights up.
         float seam = 1.0 - smoothstep(0.5, 0.95, leading);
         tint = tint * (1.0 + 1.5 * pc.look.w * seam) + 0.3 * pc.look.w * seam;
-        pointColor = tint * illumination * pc.look.z;
+        pointColor = tint * illumination * life * pc.look.z;
         pointFacing = 1.0;
 
         vec4 clip = effectClip(position, viewNormal, radiusPixels);

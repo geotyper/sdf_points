@@ -517,11 +517,14 @@ struct MetaballSettings {
     float zoom{1.0F};
     float spin{0.0F};
     float seamGlow{0.6F};
-    float seamSharpness{3.0F}; // how fast one ball's points hand over to the next across a seam
-    float oversampling{3.0F};  // points carried per point shown at rest: room to stretch
+    float seamSharpness{3.0F}; // how sharply the colour glow picks a ball at a seam
+    float oversampling{3.0F};  // headroom for stretch when new particles pick their place
+    float push{0.35F};         // how hard neighbours push apart each frame
+    float fadeSeconds{0.4F};   // particles fading in and out
+    int restart{0};            // bumped to seed the particles afresh
     int colorMode{0};      // 0 blended ball colours, 1 own ball, 2 bottom to top
     float animationSpeed{0.25F};
-    int pointBudget{160000};   // points shown, with the balls at rest
+    int pointBudget{160000};   // particles over the balls' area apart
     float pointSize{1.1F};
     float glow{0.18F};
     float brightness{1.20F};

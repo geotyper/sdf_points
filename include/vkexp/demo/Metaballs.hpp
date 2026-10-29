@@ -1,12 +1,10 @@
 #pragma once
 
 // Metaballs (geometry mode 25): balls whose fields add up, drawn as the
-// surface where the sum reaches a threshold. Every ball carries its own
-// sphere of points; a point keeps its direction from the ball's centre and
-// slides out along it to the surface, and shows only where its ball's field
-// is the strongest, so merging balls share the skin between them. The CPU
-// moves the balls each frame; this header is pure logic (no Vulkan) so it can
-// be unit tested.
+// surface where the sum reaches a threshold. The points are particles living
+// on the surface, carried along with the balls and kept evenly spread by
+// metaballs.comp. The CPU moves the balls each frame; this header is pure
+// logic (no Vulkan) so it can be unit tested.
 
 #include <algorithm>
 #include <array>
@@ -20,8 +18,14 @@ using Vec3d = std::array<double, 3>;
 
 inline constexpr int metaballLimit = 24;
 // vec4 per ball in the storage buffer (metaballs.glsl): centre and radius,
-// colour and first point, (points, field reach, 0, 0).
-inline constexpr std::size_t metaballVec4 = 3;
+// colour and where its share of the area starts, 0, centre and radius the
+// frame before. The particles' settings follow the last ball's slots.
+inline constexpr std::size_t metaballVec4 = 4;
+inline constexpr std::size_t metaballHeaderVec4 = 3;
+// Particles and neighbour table cells (a power of two) in the shared storage
+// buffer; metaballs.glsl holds the same numbers.
+inline constexpr int metaballParticleLimit = 600000;
+inline constexpr std::uint32_t metaballTableCells = 1U << 19U;
 
 inline constexpr int metaballMotionCount = 3;
 inline constexpr std::array<const char*, metaballMotionCount> metaballMotionNames{
@@ -184,22 +188,29 @@ inline double length(const Vec3d& v) { return std::sqrt(v[0] * v[0] + v[1] * v[1
     return bound;
 }
 
-// Points per ball by its area at rest; returns the running first indices,
-// one more than there are balls.
-[[nodiscard]] inline std::vector<int> metaballFirstPoints(const std::vector<Metaball>& balls,
-                                                          const MetaballParams& params, const int budget) {
+// Where each ball's share of the total area starts (0 .. 1): new particles
+// pick their ball by it, so every stretch of surface is as likely.
+[[nodiscard]] inline std::vector<double> metaballAreaStarts(const std::vector<Metaball>& balls) {
     double total = 0.0;
-    std::vector<double> areas;
-    for (std::size_t i = 0; i < balls.size(); ++i) {
-        const double size = 1.0 + params.variation * (2.0 * metaball_detail::hash(static_cast<int>(i), params.seed * 97 + 1) - 1.0);
-        areas.push_back(std::max(size, 0.2) * std::max(size, 0.2));
-        total += areas.back();
+    for (const Metaball& ball : balls) {
+        total += ball.radius * ball.radius;
     }
-    std::vector<int> first{0};
-    for (const double area : areas) {
-        first.push_back(first.back() + std::max(static_cast<int>(std::lround(budget * area / total)), 16));
+    std::vector<double> starts;
+    double running = 0.0;
+    for (const Metaball& ball : balls) {
+        starts.push_back(total > 0.0 ? running / total : 0.0);
+        running += ball.radius * ball.radius;
     }
-    return first;
+    return starts;
+}
+
+// Spacing of the particles: `count` of them over the balls' area apart.
+[[nodiscard]] inline double metaballSpacing(const std::vector<Metaball>& balls, const int count) {
+    double area = 0.0;
+    for (const Metaball& ball : balls) {
+        area += 4.0 * 3.14159265358979323846 * ball.radius * ball.radius;
+    }
+    return std::sqrt(area / std::max(count, 1));
 }
 
 } // namespace vkexp

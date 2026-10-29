@@ -7,6 +7,7 @@
 #include "vkexp/profiling/ProfilerTypes.hpp"
 
 #include <array>
+#include <cstdint>
 #include <vector>
 
 namespace vkexp {
@@ -51,6 +52,9 @@ private:
     // Ray marching of the 4D sections and the Julia set, once per point.
     UniquePipelineLayout sectionLayout_;
     UniquePipeline sectionPipeline_;
+    // The metaballs' particles, one pipeline per stage of their step; they
+    // share the sections' buffer.
+    std::array<UniquePipeline, 4> metaballPipelines_;
     BufferResource sections_;
     ImageResource target_;
     ImageResource depth_;
@@ -71,6 +75,13 @@ private:
     // balls' shape or motion changes.
     std::vector<double> metaballKey_;
     double metaballBound_{1.0};
+    // The balls the frame before, to carry the particles; seeded afresh
+    // when the figure changes or the mode is entered.
+    std::vector<Metaball> metaballBefore_;
+    std::vector<double> metaballSeedKey_;
+    std::uint32_t metaballFrame_{};
+    int lastGeometryMode_{-1};
+    float frameSeconds_{1.0F / 60.0F};
     VkFormat depthFormat_{VK_FORMAT_UNDEFINED};
     VkImageLayout depthLayout_{VK_IMAGE_LAYOUT_UNDEFINED};
     VkImageLayout targetLayout_{VK_IMAGE_LAYOUT_UNDEFINED};
