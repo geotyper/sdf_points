@@ -897,6 +897,19 @@ void testMetaballs() {
         right.group = -1;
         check(vkexp::metaballRay({left, right}, 2.0, {0.0, 0.0, 0.0}, 0.2, {0.0, 0.0, 1.0}) > 0.22,
               "Separate capsules bulge where they meet");
+        // A cube turned an eighth about the vertical: a face's middle ends
+        // the rounding out, its edge further than its face, its inside full.
+        vkexp::Metaball cube{{0.2, 0.0, 0.0}, 0.1};
+        cube.cube = true;
+        cube.half = 0.3;
+        cube.extent = vkexp::metaball_detail::turnAbout({0.0, 1.0, 0.0}, 0.25 * 3.14159265358979);
+        const double r = std::sqrt(0.5);
+        const vkexp::Vec3d face{0.2 + 0.3 * r, 0.0, -0.3 * r};
+        check(std::abs(vkexp::metaballRay({cube}, 2.0, face, 0.1, {r, 0.0, -r}) - 0.1) < 1e-3 &&
+                  std::abs(vkexp::metaballRay({cube}, 2.0, {0.2, 0.3, 0.0}, 0.1, {0.0, 1.0, 0.0}) - 0.1) < 1e-3 &&
+                  vkexp::metaballField({cube}, 2.0, {0.2 + 0.4, 0.0, 0.0}) > vkexp::metaballThreshold(2.0) &&
+                  vkexp::metaballField({cube}, 2.0, {0.2 + 0.3, 0.29, 0.0}) == 1.0,
+              "Turned cube");
     }
     // Every motion closes its loop, and the bound holds the surface.
     for (int motion = 0; motion < vkexp::metaballMotionCount; ++motion) {

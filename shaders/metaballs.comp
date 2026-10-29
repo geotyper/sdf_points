@@ -90,7 +90,8 @@ float crowd(vec3 p, int self, out vec3 push) {
 // out to the surface, kept with the chance that undoes the stretch along the
 // ray and with the ball's share of the surface there. A capsule's rays from
 // all along its segment cover its side evenly as they are; a ring's rays
-// run square to it, kept more often on the outer side, which is wider.
+// run square to it, kept more often on the outer side, which is wider; a
+// cube's start anywhere inside its core.
 bool sampleSurface(int index, uint attempt, out vec3 p) {
     int ball = metaballOf(chance(index, attempt, 0u));
     vec4 b = metaball(ball, 0), extent = metaball(ball, 2);
@@ -101,7 +102,13 @@ bool sampleSurface(int index, uint attempt, out vec3 p) {
     vec3 origin = b.xyz;
     float major = length(extent.xyz);
     float stretch = 1.0;
-    if (extent.w > 0.5) {
+    float step = 0.15 * b.w;
+    if (extent.w > 1.5) {
+        float halfSize = metaball(ball, 5).x;
+        vec3 inside = vec3(chance(index, attempt, 4u), chance(index, attempt, 5u), chance(index, attempt, 6u));
+        origin += metaballTurn(extent.xyz, halfSize * (2.0 * inside - 1.0), false);
+        step = 0.15 * max(b.w, 0.5 * halfSize);
+    } else if (extent.w > 0.5) {
         vec3 axis = extent.xyz / max(major, 1e-9);
         vec3 u = metaballAcross(axis), v = cross(axis, u);
         float turn = TAU * chance(index, attempt, 4u);
@@ -112,7 +119,7 @@ bool sampleSurface(int index, uint attempt, out vec3 p) {
     } else if (major > 1e-6) {
         origin += (2.0 * chance(index, attempt, 4u) - 1.0) * extent.xyz;
     }
-    float t = metaballRay(origin, b.w, direction);
+    float t = metaballRay(origin, b.w, step, direction);
     if (t <= 0.0) return false;
     p = origin + t * direction;
     float sharpness = max(pc.motion.w, 0.5);
@@ -181,7 +188,8 @@ void main() {
                 vec4 now = metaball(i, 0), before = metaball(i, 3);
                 vec4 extentNow = metaball(i, 2);
                 vec4 extentBefore = vec4(metaball(i, 4).xyz, extentNow.w);
-                vec3 core = metaballCore(before, extentBefore, p);
+                vec4 halfSize = metaball(i, 5);
+                vec3 core = metaballCore(before, extentBefore, halfSize.y, p);
                 vec3 d = p - core;
                 float far = pc.motion.y * before.w;
                 float q = 1.0 - dot(d, d) / (far * far);
@@ -189,6 +197,16 @@ void main() {
                 float k = q * q * q;
                 float lengthBefore = length(extentBefore.xyz), lengthNow = length(extentNow.xyz);
                 vec3 arm = core - before.xyz;
+                if (extentNow.w > 1.5) {
+                    // A cube: rigid in its own frame, the core scaled with
+                    // its half size and the offset with the radius.
+                    vec3 armLocal = metaballTurn(extentBefore.xyz, arm, true);
+                    vec3 dLocal = metaballTurn(extentBefore.xyz, d, true);
+                    vec3 local = armLocal * halfSize.x / max(halfSize.y, 1e-6) + now.w / before.w * dLocal;
+                    move += k * (now.xyz + metaballTurn(extentNow.xyz, local, false) - p);
+                    total += k;
+                    continue;
+                }
                 if (lengthBefore > 1e-6 && lengthNow > 1e-6) {
                     vec3 from = extentBefore.xyz / lengthBefore, to = extentNow.xyz / lengthNow;
                     arm = lengthNow / lengthBefore * turnBetween(from, to, arm);

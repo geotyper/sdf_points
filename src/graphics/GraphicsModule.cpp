@@ -819,7 +819,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             polytope_.write(palette.data(), sizeof(palette));
             polytopeKey_ = {-1, -1, -1};
         }
-        // Metaballs: the balls moved on the CPU, five vec4 each with the
+        // Metaballs: the balls moved on the CPU, six vec4 each with the
         // place they had the frame before, then the particles' settings, in
         // the polytope buffer; metaballs.comp carries the particles.
         const auto& metaballs = state_.metaballs;
@@ -835,10 +835,11 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             ballParams.spread = metaballs.spread;
             ballParams.breathe = metaballs.breathe;
             ballParams.seed = metaballs.seed;
+            ballParams.roundness = metaballs.roundness;
             const std::vector<double> shapeKey{
                 static_cast<double>(metaballs.motion), static_cast<double>(metaballs.balls),
                 metaballs.radius, metaballs.variation, metaballs.reach, metaballs.spread,
-                metaballs.breathe, static_cast<double>(metaballs.seed)};
+                metaballs.breathe, static_cast<double>(metaballs.seed), metaballs.roundness};
             if (shapeKey != metaballKey_) {
                 metaballKey_ = shapeKey;
                 metaballBound_ = metaballBound(ballParams);
@@ -860,7 +861,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                     for (std::size_t k = 0; k < 3; ++k) {
                         reset = reset ||
                                 std::abs(balls[i].centre[k] - metaballBefore_[i].centre[k]) > balls[i].radius ||
-                                std::abs(balls[i].extent[k] - metaballBefore_[i].extent[k]) > balls[i].radius;
+                                (!balls[i].cube &&
+                                 std::abs(balls[i].extent[k] - metaballBefore_[i].extent[k]) > balls[i].radius);
                     }
                 }
             }
@@ -885,9 +887,11 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 }
                 out[3] = static_cast<float>(balls[i].radius);
                 out[7] = static_cast<float>(starts[i]);
-                out[11] = balls[i].ring ? 1.0F : 0.0F;
+                out[11] = balls[i].cube ? 2.0F : balls[i].ring ? 1.0F : 0.0F;
                 out[15] = static_cast<float>(metaballBefore_[i].radius);
                 out[19] = static_cast<float>(group);
+                out[20] = static_cast<float>(balls[i].half);
+                out[21] = static_cast<float>(metaballBefore_[i].half);
             }
             float* header = data.data() + static_cast<std::size_t>(metaballLimit) * metaballVec4 * 4U;
             // Neighbours within two and a half spacings; their summed weight

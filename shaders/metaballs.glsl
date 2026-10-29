@@ -16,21 +16,24 @@
 // motion = colour mode (0 blended, 1 own ball, 2 bottom to top), field reach
 // in radii, oversampling of new particles, seam sharpness; loop = cycles,
 // 0, 0, zoom.
-// The polytope storage buffer holds five vec4 per ball (centre and radius,
+// The polytope storage buffer holds six vec4 per ball (centre and radius,
 // colour and where its share of the area starts, extent and kind, centre and
-// radius the frame before, extent the frame before and group), then from
+// radius the frame before, extent the frame before and group, a cube's half
+// size now and the frame before), then from
 // METABALL_HEADER: (reset, frame number, particles, fade step), (neighbour
 // reach, neighbours' weight at the rest density, hash table cells, spacing),
 // (particles to start with, push strength, density tolerance, 0).
 //
 // A "ball" has a core: its centre alone, a segment centre +- extent (a
 // capsule), or with kind 1 a ring of radius |extent| about the extent's axis
-// (a torus). Its field falls off with the distance from the nearest point of
+// (a torus), or with kind 2 a cube of half size `halfSize` turned by the unit
+// quaternion whose x, y, z are the extent (w >= 0), its surface a rounded
+// cube. Its field falls off with the distance from the nearest point of
 // the core. Balls of one group (consecutive, as a worm's segments) take the
 // strongest of their fields instead of the sum, so a chain is one smooth tube
 // with no bulge at the joints; groups add up as before.
 
-const int METABALL = 5;
+const int METABALL = 6;
 const int METABALL_HEADER = METABALL * 24;
 // Particle slots in the shared storage buffer (binding 3): position and
 // life, (alive, 0, 0, 0), scratch position and life. The neighbour table
@@ -67,9 +70,22 @@ vec3 metaballAcross(vec3 axis) {
     return normalize(cross(axis, abs(axis.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
 }
 
-// The point of the core (centre `ball.xyz`, extent and kind `extent`) nearest `p`.
-vec3 metaballCore(vec4 ball, vec4 extent, vec3 p) {
+// A vector turned by the unit quaternion with x, y, z `turn` and w >= 0
+// (`back` turns the other way).
+vec3 metaballTurn(vec3 turn, vec3 v, bool back) {
+    float w = sqrt(max(0.0, 1.0 - dot(turn, turn)));
+    vec3 axis = back ? -turn : turn;
+    return v + 2.0 * cross(axis, cross(axis, v) + w * v);
+}
+
+// The point of the core (centre `ball.xyz`, extent and kind `extent`, a
+// cube's half size `halfSize`) nearest `p`.
+vec3 metaballCore(vec4 ball, vec4 extent, float halfSize, vec3 p) {
     vec3 v = p - ball.xyz;
+    if (extent.w > 1.5) {
+        vec3 local = metaballTurn(extent.xyz, v, true);
+        return ball.xyz + metaballTurn(extent.xyz, clamp(local, -halfSize, halfSize), false);
+    }
     if (extent.w > 0.5) {
         float major = length(extent.xyz);
         vec3 axis = extent.xyz / max(major, 1e-9);
@@ -86,7 +102,7 @@ vec3 metaballCore(vec4 ball, vec4 extent, vec3 p) {
 // positive), d the offset from the core and R the field's reach.
 float metaballFalloff(int ball, vec3 p, out vec3 offset, out float far) {
     vec4 b = metaball(ball, 0);
-    offset = p - metaballCore(b, metaball(ball, 2), p);
+    offset = p - metaballCore(b, metaball(ball, 2), metaball(ball, 5).x, p);
     far = pc.motion.y * b.w;
     return 1.0 - dot(offset, offset) / (far * far);
 }
@@ -152,10 +168,10 @@ int metaballOf(float u) {
 // From `origin` on a ball's core along `direction`: the first distance where
 // the field falls below the threshold (-1 if the march meets none). The
 // ball's own field holds the threshold up to its radius, so the march starts
-// there.
-float metaballRay(vec3 origin, float radius, vec3 direction) {
+// there, in steps of `step`.
+float metaballRay(vec3 origin, float radius, float step, vec3 direction) {
     float threshold = pc.shape.y;
-    float low = radius, step = 0.15 * radius, high = -1.0;
+    float low = radius, high = -1.0;
     for (int k = 0; k < 64; ++k) {
         if (metaballField(origin + (low + step) * direction) < threshold) {
             high = low + step;

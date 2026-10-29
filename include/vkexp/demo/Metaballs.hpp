@@ -2,7 +2,7 @@
 
 // Metaballs (geometry mode 25): balls whose fields add up, drawn as the
 // surface where the sum reaches a threshold. A "ball" may also be a capsule
-// (a segment's field) or a ring (a torus); capsules of one group, as a
+// (a segment's field), a ring (a torus) or a turned cube (a rounded cube); capsules of one group, as a
 // worm's segments, take the strongest of their fields rather than the sum,
 // so a chain is one smooth tube. The points are particles living
 // on the surface, carried along with the balls and kept evenly spread by
@@ -22,18 +22,19 @@ using Vec3d = std::array<double, 3>;
 inline constexpr int metaballLimit = 24;
 // vec4 per ball in the storage buffer (metaballs.glsl): centre and radius,
 // colour and where its share of the area starts, extent and kind, centre and
-// radius the frame before, extent the frame before and group. The particles'
-// settings follow the last ball's slots.
-inline constexpr std::size_t metaballVec4 = 5;
+// radius the frame before, extent the frame before and group, a cube's half
+// size now and the frame before. The particles' settings follow the last
+// ball's slots.
+inline constexpr std::size_t metaballVec4 = 6;
 inline constexpr std::size_t metaballHeaderVec4 = 3;
 // Particles and neighbour table cells (a power of two) in the shared storage
 // buffer; metaballs.glsl holds the same numbers.
 inline constexpr int metaballParticleLimit = 600000;
 inline constexpr std::uint32_t metaballTableCells = 1U << 18U;
 
-inline constexpr int metaballMotionCount = 6;
+inline constexpr int metaballMotionCount = 8;
 inline constexpr std::array<const char*, metaballMotionCount> metaballMotionNames{
-    "Orbits", "Cell division", "Lava lamp", "Worms", "Rings", "Ring fountain"};
+    "Orbits", "Cell division", "Lava lamp", "Worms", "Rings", "Ring fountain", "Dice", "Cube block"};
 // Segments per worm in the Worms motion.
 inline constexpr int metaballWormSegments = 4;
 
@@ -45,18 +46,22 @@ struct MetaballParams {
     double reach{2.0};     // field reach in radii: higher, the balls reach out further
     double spread{0.75};   // how far the balls travel
     double breathe{0.12};  // radii swelling and easing
+    double roundness{0.3}; // a cube's rounding, as a share of its half size
     int seed{1};
 };
 
-// The core is the centre alone, the segment centre +- extent, or with `ring`
-// the circle of radius |extent| about the extent's axis; the surface lies
-// `radius` out from it. Balls of one group (>= 0, consecutive) take the
+// The core is the centre alone, the segment centre +- extent, with `ring`
+// the circle of radius |extent| about the extent's axis, or with `cube` the
+// cube of half size `half` turned by the unit quaternion whose x, y, z are
+// the extent (w >= 0); the surface lies `radius` out from it. Balls of one group (>= 0, consecutive) take the
 // strongest of their fields; a group of -1 is the ball's own.
 struct Metaball {
     Vec3d centre{};
     double radius{};
     Vec3d extent{};
     bool ring{false};
+    bool cube{false};
+    double half{};
     int group{-1};
 };
 
@@ -80,6 +85,21 @@ inline Vec3d cross(const Vec3d& a, const Vec3d& b) {
     return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
 }
 
+// `v` turned by the unit quaternion with x, y, z `turn` and w >= 0 (`back`
+// turns the other way).
+inline Vec3d turn(const Vec3d& turn, const Vec3d& v, const bool back) {
+    const double w = std::sqrt(std::max(0.0, 1.0 - dot(turn, turn)));
+    const Vec3d axis = back ? Vec3d{-turn[0], -turn[1], -turn[2]} : turn;
+    return add(v, cross(axis, add(cross(axis, v), v, w)), 2.0);
+}
+
+// The x, y, z of the quaternion turning by `angle` about the unit `axis`,
+// signed so that its w is not negative.
+inline Vec3d turnAbout(const Vec3d& axis, const double angle) {
+    const double s = std::sin(0.5 * angle) * (std::cos(0.5 * angle) < 0.0 ? -1.0 : 1.0);
+    return {s * axis[0], s * axis[1], s * axis[2]};
+}
+
 // A unit vector square to the unit `axis`.
 inline Vec3d across(const Vec3d& axis) {
     const Vec3d c = cross(axis, std::abs(axis[1]) < 0.9 ? Vec3d{0.0, 1.0, 0.0} : Vec3d{1.0, 0.0, 0.0});
@@ -100,6 +120,13 @@ inline Vec3d across(const Vec3d& axis) {
 [[nodiscard]] inline Vec3d metaballCore(const Metaball& ball, const Vec3d& p) {
     using namespace metaball_detail;
     const Vec3d v = add(p, ball.centre, -1.0);
+    if (ball.cube) {
+        Vec3d local = turn(ball.extent, v, true);
+        for (double& x : local) {
+            x = std::clamp(x, -ball.half, ball.half);
+        }
+        return add(ball.centre, turn(ball.extent, local, false));
+    }
     if (ball.ring) {
         const double major = length(ball.extent);
         const Vec3d axis{ball.extent[0] / major, ball.extent[1] / major, ball.extent[2] / major};
@@ -218,6 +245,47 @@ inline Vec3d across(const Vec3d& axis) {
             ball.group = i;
             continue;
         }
+        if (params.motion == 6 || params.motion == 7) {
+            // Cubes: rounded, `half` the core and `radius` the rounding.
+            const auto shape = [&](Metaball& cube, const double outer) {
+                const double round = std::clamp(params.roundness, 0.08, 1.0);
+                cube.cube = true;
+                cube.radius = outer * round;
+                cube.half = outer * (1.0 - round);
+            };
+            const auto axisOf = [&](const int salt) {
+                const double y = 2.0 * hash(i, seed + salt) - 1.0;
+                const double around = tau * hash(i, seed + salt + 1);
+                const double flat = std::sqrt(std::max(0.0, 1.0 - y * y));
+                return Vec3d{flat * std::cos(around), y, flat * std::sin(around)};
+            };
+            if (params.motion == 6) {
+                // Dice: tumbling on Lissajous paths, melting where they meet.
+                shape(ball, 0.8 * ball.radius);
+                ball.extent = metaball_detail::turnAbout(axisOf(40), turns(42) * phase + offset(43));
+                ball.centre = {params.spread * std::sin(turns(10) * phase + offset(11)),
+                               0.8 * params.spread * std::sin(turns(12) * phase + offset(13)),
+                               params.spread * std::sin(turns(14) * phase + offset(15))};
+            } else {
+                // Cube block: one block of cubes face to face, parting while
+                // each tumbles a whole number of turns, and closing again
+                // square as it was.
+                const int side = static_cast<int>(std::ceil(std::cbrt(static_cast<double>(count)) - 1e-9));
+                const double outer = 0.8 * params.radius * (1.0 + params.breathe * std::sin(2.0 * phase));
+                shape(ball, outer);
+                const double part = 0.5 - 0.5 * std::cos(phase);
+                const double eased = part * part * (3.0 - 2.0 * part);
+                const double step = 2.0 * outer + 1.2 * params.spread * eased;
+                const std::array<int, 3> at{i % side, (i / side) % side, i / (side * side)};
+                for (std::size_t k = 0; k < 3; ++k) {
+                    ball.centre[k] = step * (at[k] - 0.5 * (side - 1));
+                }
+                ball.extent = metaball_detail::turnAbout(axisOf(40), std::abs(turns(42)) * (phase - std::sin(phase)) *
+                                                                         (hash(i, seed + 44) < 0.5 ? -1.0 : 1.0));
+            }
+            ball.group = i;
+            continue;
+        }
         ball.group = i;
         if (params.motion == 1) {
             // Cell division: the balls sit together as one cell, part along
@@ -282,9 +350,18 @@ inline Vec3d across(const Vec3d& axis) {
 }
 
 // Points of the ball's core to march out from: its centre, a segment's ends
-// and middle, six points round a ring.
+// and middle, six points round a ring, a cube's corners.
 [[nodiscard]] inline std::vector<Vec3d> metaballCorePoints(const Metaball& ball) {
     using namespace metaball_detail;
+    if (ball.cube) {
+        std::vector<Vec3d> corners;
+        for (int k = 0; k < 8; ++k) {
+            const Vec3d corner{(k & 1) != 0 ? ball.half : -ball.half, (k & 2) != 0 ? ball.half : -ball.half,
+                               (k & 4) != 0 ? ball.half : -ball.half};
+            corners.push_back(add(ball.centre, turn(ball.extent, corner, false)));
+        }
+        return corners;
+    }
     const double major = length(ball.extent);
     if (ball.ring) {
         const Vec3d axis{ball.extent[0] / major, ball.extent[1] / major, ball.extent[2] / major};
@@ -329,9 +406,14 @@ inline Vec3d across(const Vec3d& axis) {
     return bound;
 }
 
-// The area of a ball standing alone: a sphere, a capsule or a torus.
+// The area of a ball standing alone: a sphere, a capsule, a torus or a
+// rounded cube.
 [[nodiscard]] inline double metaballArea(const Metaball& ball) {
     constexpr double pi = 3.14159265358979323846;
+    if (ball.cube) {
+        return 24.0 * ball.half * ball.half + 12.0 * pi * ball.half * ball.radius +
+               4.0 * pi * ball.radius * ball.radius;
+    }
     const double major = metaball_detail::length(ball.extent);
     if (ball.ring) {
         return 4.0 * pi * pi * major * ball.radius;
