@@ -354,22 +354,45 @@ struct FourSurfaceSettings {
     return settings;
 }
 
-// Origami: a Platonic solid unfolds on its hinges into a flat net, swirls,
-// and folds on through into the mirror solid below (or back up).
+// Origami: flat pieces on hinges or creases (Folding.hpp). The Platonic net
+// unfolds on its hinges into a flat net, swirls, and folds on through into the
+// mirror solid below (or back up); the other figures tell the same story of
+// closed, open and mirrored.
 struct OrigamiSettings {
     bool paused{};
+    int figure{0};  // FoldFigure
     int solid{1};   // OrigamiSolid
     int variant{0}; // which non-overlapping net
     bool mirror{true};    // fold through to the other side
     float stagger{0.35F}; // outer hinges lag behind: 0 .. 1 (half a turn at the rim)
     float holdClosed{0.20F};
     float holdFlat{0.12F};
-    float swirl{1.2F};    // turn of the net's rim while it lies flat, radians
+    float swirl{1.2F};    // turn of the rim while the figure lies open, radians
     float sphere{0.0F};   // closed faces swell onto the circumsphere
     float border{1.0F};   // frame width: 1 fills the faces
     float hingeGlow{0.8F};
     float flatFlash{0.3F};
-    int colorMode{0};     // 0 faces, 1 hinge depth, 2 near to far colour by depth
+    int colorMode{0};     // 0 pieces, 1 near to far colour
+    // Tesseract
+    float fourTilt{0.0F};
+    float fourTurn{0.0F};
+    float fourDistance{4.5F};
+    // Miura-ori
+    int panelsX{14};
+    int panelsY{10};
+    float panelAngle{1.1F};
+    float panelAspect{1.0F};
+    // Flasher
+    int arms{6};
+    int rings{8};
+    float wrap{1.0F};
+    // Rotating squares
+    int squares{9};
+    float dome{0.0F};
+    // Rolling sheet
+    int sheetShape{3};
+    // Triangle to square
+    float lift{0.08F};
     float spin{0.25F};
     float animationSpeed{0.42F};
     float size{0.55F};
@@ -382,6 +405,71 @@ struct OrigamiSettings {
     std::array<float, 3> nearColor{1.00F, 0.62F, 0.16F};
     std::array<float, 3> farColor{0.14F, 0.58F, 1.00F};
 };
+
+// What suits each figure; the palette stays.
+[[nodiscard]] inline OrigamiSettings origamiDefaults(const int figure) {
+    OrigamiSettings settings;
+    settings.figure = figure;
+    switch (figure) {
+    case 1: // tesseract: frames show the cubes inside one another
+        settings.border = 0.3F;
+        settings.mirror = false;
+        settings.swirl = 0.0F;
+        settings.zoom = 1.0F;
+        settings.pointBudget = 300000;
+        settings.tilt = 0.45F;
+        break;
+    case 2: // jitterbug
+        settings.swirl = 0.0F;
+        settings.holdClosed = 0.15F;
+        settings.holdFlat = 0.15F;
+        settings.zoom = 1.0F;
+        settings.flatFlash = 0.0F;
+        settings.hingeGlow = 1.2F;
+        break;
+    case 3: // triangle to square
+        settings.swirl = 0.0F;
+        settings.holdClosed = 0.25F;
+        settings.holdFlat = 0.25F;
+        settings.tilt = 1.0F;
+        settings.zoom = 1.0F;
+        settings.flatFlash = 0.2F;
+        break;
+    case 4: // Miura-ori
+        settings.swirl = 0.0F;
+        settings.tilt = 0.6F;
+        settings.zoom = 1.0F;
+        settings.flatFlash = 0.0F;
+        settings.hingeGlow = 0.6F;
+        settings.pointBudget = 300000;
+        break;
+    case 5: // flasher
+        settings.swirl = 0.0F;
+        settings.tilt = 0.75F;
+        settings.zoom = 1.0F;
+        settings.pointBudget = 300000;
+        break;
+    case 6: // rotating squares
+        settings.swirl = 0.0F;
+        settings.tilt = 0.9F;
+        settings.zoom = 1.0F;
+        settings.flatFlash = 0.0F;
+        settings.pointBudget = 250000;
+        break;
+    case 7: // rolling sheet
+        settings.swirl = 0.0F;
+        settings.tilt = 0.45F;
+        settings.zoom = 1.0F;
+        settings.flatFlash = 0.0F;
+        settings.holdClosed = 0.15F;
+        settings.holdFlat = 0.08F;
+        settings.pointBudget = 300000;
+        break;
+    default:
+        break;
+    }
+    return settings;
+}
 
 // Flowing shells: nested cube frames whose points fall inward from shell to
 // shell, while the innermost shell's points fountain out to rebuild the

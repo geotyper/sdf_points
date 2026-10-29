@@ -219,20 +219,21 @@ void main() {
     }
 
     if (origamiMode()) {
-        // Every fan triangle of every face holds rows parallel to its rim,
+        // Every fan triangle of a face holds rows parallel to its rim,
         // offset + 1, offset + 2, ... points long, so the spacing stays even.
-        int rows = max(int(pc.points.x + 0.5), 1), offset = int(pc.points.y + 0.5);
-        int sides = origamiSides();
+        int face = origamiFaceOf(gl_InstanceIndex);
+        vec4 share = origamiFace(face, 3);
+        int rows = max(int(share.y + 0.5), 1), offset = int(share.z + 0.5);
+        int sides = origamiSides(face);
         int perFan = rows * offset + rows * (rows + 1) / 2;
-        int face = gl_InstanceIndex / (sides * perFan);
-        int rest = gl_InstanceIndex % (sides * perFan);
+        int rest = gl_InstanceIndex - int(share.x + 0.5);
         int fan = rest / perFan, index = rest % perFan;
         float b = float(2 * offset + 1);
         int row = int((sqrt(b * b + 8.0 * float(index)) - b) * 0.5);
         if (row * offset + row * (row + 1) / 2 > index) --row;
         if ((row + 1) * offset + (row + 1) * (row + 2) / 2 <= index) ++row;
         int column = index - (row * offset + row * (row + 1) / 2);
-        if (face >= int(pc.motion.x + 0.5) || row >= rows) {
+        if (fan >= sides || row >= rows || gl_InstanceIndex >= int(pc.points.x + 0.5)) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
             pointColor = vec3(0.0);
             pointFacing = 0.0;
@@ -251,10 +252,11 @@ void main() {
                            * mix(0.36, 1.0, illumination);
         radiusPixels = max(radiusPixels, 0.30);
         vec4 colour = origamiFace(face, 2);
-        // The hinge lights up while it turns, brightest half way.
-        float fold = abs(origamiFace(face, 0).w);
+        // The hinge lights up while it turns, and so do whole pieces the
+        // figure marks (a tesseract's hinge squares, the jitterbug's icosahedron).
         float hinge = int(colour.w + 0.5) == fan && colour.w > -0.5
-                    ? smoothstep(0.75, 1.0, rho) * 4.0 * fold * (1.0 - fold) : 0.0;
+                    ? smoothstep(0.75, 1.0, rho) * origamiFace(face, 0).w : 0.0;
+        hinge = max(hinge, share.w);
         vec3 tint = colour.rgb * (1.0 + pc.motion.w) + 0.25 * pc.motion.w;
         tint = tint * (1.0 + 2.0 * pc.motion.z * hinge) + 0.4 * pc.motion.z * hinge;
         radiusPixels *= 1.0 + 0.4 * pc.motion.z * hinge;

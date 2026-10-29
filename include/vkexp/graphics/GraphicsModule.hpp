@@ -2,7 +2,7 @@
 
 #include "vkexp/core/Module.hpp"
 #include "vkexp/core/VulkanResource.hpp"
-#include "vkexp/demo/Origami.hpp"
+#include "vkexp/demo/Folding.hpp"
 #include "vkexp/profiling/ProfilerTypes.hpp"
 
 #include <array>
@@ -60,10 +60,12 @@ private:
     std::vector<std::array<int, 2>> polytopeClasses_; // part and direction of every edge
     std::array<int, 3> polytopeKey_{-1, -1, -1};
     int polytopeEdgeCount_{};
-    // Origami: the solid's cut, made again when the solid or net changes.
+    // Origami: the solid's cut, made again when the solid or net changes,
+    // and the figure's reach and face areas, again when its shape changes.
     OrigamiNet origamiNet_;
     std::array<int, 2> origamiKey_{-1, -1};
-    double origamiReach_{1.0};
+    std::vector<double> foldKey_;
+    FoldExtent foldExtent_;
     VkFormat depthFormat_{VK_FORMAT_UNDEFINED};
     VkImageLayout depthLayout_{VK_IMAGE_LAYOUT_UNDEFINED};
     VkImageLayout targetLayout_{VK_IMAGE_LAYOUT_UNDEFINED};

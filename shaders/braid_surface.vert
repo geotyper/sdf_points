@@ -61,17 +61,17 @@ void main() {
         return;
     }
     if (origamiMode()) {
-        // One instance per face: every fan triangle a 16 x 16 mesh from the
-        // window's edge (or the centre) out to the rim.
-        const int grid = 16;
+        // One instance per face: every fan triangle a mesh from the window's
+        // edge (or the centre) out to the rim, coarser when there are many faces.
+        int grid = max(int(pc.points.w + 0.5), 1);
         int fan = cell / (grid * grid);
-        if (fan >= origamiSides()) {
+        if (fan >= origamiSides(gl_InstanceIndex)) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
             return;
         }
         int fanCell = cell % (grid * grid);
         ivec2 corner = ivec2(fanCell / grid, fanCell % grid) + corners[gl_VertexIndex % 6];
-        float inner = origamiInnerRadius();
+        float inner = origamiInnerRadius(gl_InstanceIndex);
         vec3 normal;
         gl_Position = projectPoint(origamiPoint(gl_InstanceIndex, fan,
                                                 mix(inner, 1.0, float(corner.x) / float(grid)),

@@ -26,10 +26,11 @@ inline constexpr int origamiSolidCount = 5;
 inline constexpr std::array<const char*, origamiSolidCount> origamiSolidNames{
     "Tetrahedron", "Cube", "Octahedron", "Dodecahedron", "Icosahedron"};
 
-// Faces the storage buffer holds, and vec4 per face (origami.glsl): centre and
-// fold, normal and depth, colour and hinge side, then up to five corners.
+// Corners a face may have, and vec4 per face in the storage buffer
+// (origami.glsl): centre and hinge glow, normal and corners, colour and hinge
+// corner, (first point, rows, window rows, glow), then the corners.
 inline constexpr int origamiMaxSides = 5;
-inline constexpr std::size_t origamiFaceVec4 = 3 + origamiMaxSides;
+inline constexpr std::size_t origamiFaceVec4 = 4 + origamiMaxSides;
 
 using Vec3d = std::array<double, 3>;
 

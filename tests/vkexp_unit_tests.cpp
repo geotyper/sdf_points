@@ -7,7 +7,7 @@
 #include "vkexp/demo/FourSurfaces.hpp"
 #include "vkexp/demo/LoopPlan.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
-#include "vkexp/demo/Origami.hpp"
+#include "vkexp/demo/Folding.hpp"
 #include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/demo/AlgebraicKnot.hpp"
 #include "vkexp/demo/HigherCubes.hpp"
@@ -851,6 +851,95 @@ void testOrigami() {
           "Origami folds: closed, mirrored, flat");
 }
 
+void testFolding() {
+    constexpr double pi = 3.14159265358979323846;
+    const auto net = vkexp::origamiNet(1, 0);
+    vkexp::FoldParams p;
+    p.stagger = 0.0;
+    p.holdClosed = 0.0;
+    p.holdFlat = 0.0;
+    const auto distance = [](const vkexp::Vec3d& a, const vkexp::Vec3d& b) {
+        return std::sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) +
+                         (a[2] - b[2]) * (a[2] - b[2]));
+    };
+    const auto edges = [&](const vkexp::FoldScene& scene) {
+        std::vector<double> out;
+        for (const auto& face : scene.faces) {
+            for (std::size_t i = 0; i < face.corners.size(); ++i) {
+                out.push_back(distance(face.corners[i], face.corners[(i + 1) % face.corners.size()]));
+            }
+        }
+        return out;
+    };
+    // Rigid figures keep their edges between closed and open.
+    for (const int figure : {0, 3, 4, 6}) {
+        p.figure = figure;
+        const auto closed = edges(vkexp::foldScene(p, net, 0.0));
+        const auto open = edges(vkexp::foldScene(p, net, 0.5 * pi));
+        bool same = closed.size() == open.size();
+        for (std::size_t i = 0; same && i < closed.size(); ++i) same = std::abs(closed[i] - open[i]) < 1e-9;
+        check(same, "Folding figures keep their edges");
+    }
+    // The tesseract lies flat as Dali's cross: every square the same.
+    p.figure = 1;
+    for (const double e : edges(vkexp::foldScene(p, net, 0.5 * pi))) {
+        check(std::abs(e - 2.0) < 1e-9, "Tesseract unfolds into equal cubes");
+    }
+    check(vkexp::foldScene(p, net, 0.5 * pi).faces.size() == 48, "Tesseract: eight cubes of six squares");
+    // The jitterbug closes into the octahedron, corners on the axes.
+    p.figure = 2;
+    for (const auto& c : vkexp::foldScene(p, net, 0.0).faces[0].corners) {
+        const int zeros = (std::abs(c[0]) < 1e-9) + (std::abs(c[1]) < 1e-9) + (std::abs(c[2]) < 1e-9);
+        check(zeros == 2, "Jitterbug closes into the octahedron");
+    }
+    check(vkexp::foldScene(p, net, 0.5 * pi).faces.size() == 20, "Open jitterbug: eight triangles and six split squares");
+    // Dudeney: the triangle's side, then the square's diagonal.
+    p.figure = 3;
+    const auto widest = [&](const vkexp::FoldScene& scene) {
+        double most = 0.0;
+        for (const auto& a : scene.faces) {
+            for (const auto& b : scene.faces) {
+                for (const auto& x : a.corners) {
+                    for (const auto& y : b.corners) most = std::max(most, distance(x, y));
+                }
+            }
+        }
+        return most;
+    };
+    check(std::abs(widest(vkexp::foldScene(p, net, 0.0)) - 1.7) < 1e-9, "Dudeney starts as the triangle");
+    check(std::abs(widest(vkexp::foldScene(p, net, 0.5 * pi)) - 1.7 * std::sqrt(0.5 * std::sqrt(3.0))) < 1e-6,
+          "Dudeney turns into the square");
+    // Rotating squares stay joined at their corners.
+    p.figure = 6;
+    const auto squares = vkexp::foldScene(p, net, 0.5 * pi);
+    double touch = 1e9;
+    for (const auto& x : squares.faces[0].corners) {
+        for (const auto& y : squares.faces[1].corners) touch = std::min(touch, distance(x, y));
+    }
+    check(touch < 1e-9, "Rotating squares stay joined");
+    // The rolled strip closes its seam: straight for the cylinder, flipped for Moebius.
+    p.figure = 7;
+    p.sheetShape = 0;
+    auto rolled = vkexp::foldScene(p, net, 0.0);
+    check(distance(rolled.faces.front().corners[0], rolled.faces[71 * 10].corners[1]) < 1e-9,
+          "Cylinder closes");
+    p.sheetShape = 2;
+    rolled = vkexp::foldScene(p, net, 0.0);
+    check(distance(rolled.faces.front().corners[0], rolled.faces[71 * 10 + 9].corners[2]) < 1e-9,
+          "Moebius band closes with a half twist");
+    for (int figure = 0; figure < vkexp::foldFigureCount; ++figure) {
+        p.figure = figure;
+        const auto scene = vkexp::foldScene(p, net, 1.0);
+        bool fits = scene.faces.size() * vkexp::origamiFaceVec4 * 4U <=
+                    vkexp::polytopeHeaderFloats + vkexp::polytopeEdgeLimit * 12U;
+        for (const auto& face : scene.faces) {
+            fits = fits && face.corners.size() >= 3 &&
+                   face.corners.size() <= static_cast<std::size_t>(vkexp::origamiMaxSides);
+        }
+        check(fits, "Folding faces fit the buffer");
+    }
+}
+
 void testFourSurfaces() {
     check(vkexp::fourSurfacePatches({0, 5}) == 25 && vkexp::fourSurfacePatches({3, 5}) == 1,
           "Calabi-Yau has n^2 patches, the others one");
@@ -891,5 +980,6 @@ int main() {
     testFourSurfaces();
     testHigherCubes();
     testOrigami();
+    testFolding();
     return failures == 0 ? 0 : 1;
 }

@@ -3,7 +3,7 @@
 #include "vkexp/demo/DemoState.hpp"
 #include "vkexp/demo/FourSurfaces.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
-#include "vkexp/demo/Origami.hpp"
+#include "vkexp/demo/Folding.hpp"
 #include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/profiling/Profiler.hpp"
@@ -523,17 +523,81 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         }
     } else if (braid.geometryMode == 23) {
         auto& origami = state_.origami;
-        ImGui::Combo("Solid", &origami.solid, origamiSolidNames.data(), origamiSolidCount);
-        ImGui::SliderInt("Net", &origami.variant, 0, 11);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Which way the solid is cut open: every number is another net "
-                              "that lies flat without overlapping.");
+        int figure = std::clamp(origami.figure, 0, foldFigureCount - 1);
+        if (ImGui::Combo("Figure", &figure, foldFigureNames.data(), foldFigureCount)) {
+            // Each figure comes with the settings that show it best; colours stay.
+            const auto near = origami.nearColor;
+            const auto far = origami.farColor;
+            origami = origamiDefaults(figure);
+            origami.nearColor = near;
+            origami.farColor = far;
+        }
+        switch (static_cast<FoldFigure>(origami.figure)) {
+        case FoldFigure::PlatonicNet:
+            ImGui::Combo("Solid", &origami.solid, origamiSolidNames.data(), origamiSolidCount);
+            ImGui::SliderInt("Net", &origami.variant, 0, 11);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Which way the solid is cut open: every number is another net "
+                                  "that lies flat without overlapping.");
+            }
+            ImGui::SliderFloat("Sphere", &origami.sphere, 0.0F, 1.0F, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Closed, the faces swell into a sphere through the corners.");
+            }
+            break;
+        case FoldFigure::TesseractNet:
+            ImGui::SliderAngle("4D tilt (XW)", &origami.fourTilt, -90.0F, 90.0F);
+            ImGui::SliderFloat("4D turn (XW)", &origami.fourTurn, -2.0F, 2.0F, "%.2f");
+            ImGui::SliderFloat("4D camera distance", &origami.fourDistance, 3.2F, 10.0F, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("The eight cubes unfold in 4D about the squares they share into "
+                                  "Dali's cross; seen from out along -w the first cube is the outer one.");
+            }
+            break;
+        case FoldFigure::Jitterbug:
+            ImGui::TextWrapped("Octahedron (closed) - icosahedron (the gaps light up) - "
+                               "cuboctahedron (open) - the other-handed icosahedron and octahedron.");
+            break;
+        case FoldFigure::Dudeney:
+            ImGui::SliderFloat("Lift", &origami.lift, 0.0F, 0.4F, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Turning pieces rise off the table so they pass over each other.");
+            }
+            break;
+        case FoldFigure::MiuraOri:
+            ImGui::SliderInt("Panels across", &origami.panelsX, 2, 40);
+            ImGui::SliderInt("Panels along", &origami.panelsY, 2, 40);
+            ImGui::SliderAngle("Panel angle", &origami.panelAngle, 25.0F, 80.0F);
+            ImGui::SliderFloat("Panel aspect", &origami.panelAspect, 0.3F, 3.0F, "%.2f");
+            break;
+        case FoldFigure::Flasher:
+            ImGui::SliderInt("Arms", &origami.arms, 3, 12);
+            ImGui::SliderInt("Rings", &origami.rings, 2, 24);
+            ImGui::SliderFloat("Wrap", &origami.wrap, 0.0F, 3.0F, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("How far the arms wind round the hub when closed, in half turns.");
+            }
+            break;
+        case FoldFigure::RotatingSquares:
+            ImGui::SliderInt("Squares", &origami.squares, 2, 40);
+            ImGui::SliderFloat("Dome", &origami.dome, -1.5F, 1.5F, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("The open sheet rises into a dome (or sinks into a bowl).");
+            }
+            break;
+        case FoldFigure::RollingSheet:
+            ImGui::Combo("Shape", &origami.sheetShape, rollingShapeNames.data(), rollingShapeCount);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("All in turn changes shape whenever the strip lies flat: "
+                                  "loop 3 cycles to close the clip.");
+            }
+            break;
         }
         ImGui::SliderFloat("Frame width", &origami.border, 0.05F, 1.0F, "%.2f");
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("1 fills the faces; less leaves a frame round a window.");
+            ImGui::SetTooltip("1 fills the pieces; less leaves a frame round a window.");
         }
-        constexpr std::array origamiColors{"Faces", "Hinge depth", "Near to far by depth"};
+        constexpr std::array origamiColors{"Pieces", "Bands", "Near to far"};
         ImGui::Combo("Colour by", &origami.colorMode, origamiColors.data(),
                      static_cast<int>(origamiColors.size()));
         ImGui::SeparatorText("Motion");
@@ -541,42 +605,43 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::SliderFloat("Speed", &origami.animationSpeed, 0.0F, 1.5F, "%.2f");
         ImGui::Checkbox("Fold through", &origami.mirror);
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Past the flat net the faces fold on into the mirror solid below; "
-                              "off, they fold back up.");
+            ImGui::SetTooltip("Past the open state the figure goes on into its mirror; "
+                              "off, it closes the way it came.");
         }
-        ImGui::SliderFloat("Stagger", &origami.stagger, 0.0F, 1.0F, "%.2f");
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Outer hinges follow later: a wave of folding running out from the base.");
+        if (origami.figure <= 1) {
+            ImGui::SliderFloat("Stagger", &origami.stagger, 0.0F, 1.0F, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Outer hinges follow later: a wave of folding running out from the base.");
+            }
         }
         ImGui::SliderFloat("Hold closed", &origami.holdClosed, 0.0F, 0.45F, "%.2f");
-        ImGui::SliderFloat("Hold flat", &origami.holdFlat, 0.0F, 0.45F, "%.2f");
-        ImGui::SliderFloat("Flat swirl", &origami.swirl, -6.0F, 6.0F, "%.2f");
+        ImGui::SliderFloat("Hold open", &origami.holdFlat, 0.0F, 0.45F, "%.2f");
+        ImGui::SliderFloat("Open swirl", &origami.swirl, -6.0F, 6.0F, "%.2f");
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("While the net lies flat it twists about its centre, more at the rim.");
-        }
-        ImGui::SliderFloat("Sphere", &origami.sphere, 0.0F, 1.0F, "%.2f");
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Closed, the faces swell into a sphere through the corners.");
+            ImGui::SetTooltip("While the figure lies open it twists about its centre, more at the rim.");
         }
         ImGui::SliderFloat("Hinge glow", &origami.hingeGlow, 0.0F, 2.0F, "%.2f");
-        ImGui::SliderFloat("Flat flash", &origami.flatFlash, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Open flash", &origami.flatFlash, 0.0F, 1.5F, "%.2f");
         ImGui::SliderFloat("Spin", &origami.spin, -2.0F, 2.0F, "%.2f");
         ImGui::SeparatorText("Points");
-        ImGui::SliderInt("Point budget", &origami.pointBudget, 10000, 1000000, "%d",
+        ImGui::SliderInt("Point budget", &origami.pointBudget, 10000, 2000000, "%d",
                          ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Point radius (700px)", &origami.pointSize, 0.4F, 3.0F, "%.2f");
         ImGui::SliderFloat("Glow", &origami.glow, 0.0F, 1.5F, "%.2f");
         ImGui::SliderFloat("Brightness", &origami.brightness, 0.5F, 2.0F, "%.2f");
         ImGui::SliderAngle("Tilt", &origami.tilt, -90.0F, 90.0F);
         ImGui::SliderFloat("Zoom", &origami.zoom, 0.25F, 4.0F, "%.2f", ImGuiSliderFlags_Logarithmic);
+        if (ImGui::Button("Reset figure")) {
+            origami = origamiDefaults(origami.figure);
+        }
         if (origami.colorMode == 2) {
             ImGui::ColorEdit3("Near color", origami.nearColor.data());
             ImGui::ColorEdit3("Far color", origami.farColor.data());
         } else {
-            ImGui::SeparatorText("Face palette");
+            ImGui::SeparatorText("Piece palette");
             for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
                 ImGui::PushID(static_cast<int>(i));
-                ImGui::ColorEdit3("##Face color", state_.palette.colors[i].data());
+                ImGui::ColorEdit3("##Piece color", state_.palette.colors[i].data());
                 ImGui::PopID();
             }
         }
