@@ -223,7 +223,9 @@ rising and sinking in a column). **Field reach** sets how far the balls reach fo
 each other, **Seam glow** lights the seams where they merge, and **Colour by**
 blends the balls' palette colours across the seams, takes the strongest ball's, or
 runs bottom to top. **Point budget** sets the density (over the balls' area apart),
-**Push apart** how hard neighbours push, **Fade time** how fast particles fade out
+**Push apart** how hard neighbours push, **Density tolerance** how far the density may
+drift (the estimate counts the particle itself, as in SPH, so an even lattice reads
+1), **Fade time** how fast particles fade out
 and in, and **Seed afresh** starts the particles over. The particles keep their
 state, so a recorded loop does not close exactly: the balls come back, the
 particles only nearly. Launch it with `--preset metaballs`.

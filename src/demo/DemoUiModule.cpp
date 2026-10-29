@@ -687,6 +687,12 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             ImGui::SetTooltip("How hard neighbouring particles push each other apart every frame: "
                               "evens the spacing out, too much makes them jitter.");
         }
+        ImGui::SliderFloat("Density tolerance", &balls.tolerance, 0.02F, 0.4F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("How far the density may drift from the even one before crowded "
+                              "particles fade out or new ones are born in gaps. Lower is more even, "
+                              "but more particles come and go.");
+        }
         ImGui::SliderFloat("Fade time", &balls.fadeSeconds, 0.05F, 2.0F, "%.2f s");
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("How long a crowded particle takes to fade out and a new one in a gap "

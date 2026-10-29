@@ -521,6 +521,7 @@ struct MetaballSettings {
     float oversampling{3.0F};  // headroom for stretch when new particles pick their place
     float push{0.35F};         // how hard neighbours push apart each frame
     float fadeSeconds{0.4F};   // particles fading in and out
+    float tolerance{0.10F};    // density off the even one before particles fade out or are born
     int restart{0};            // bumped to seed the particles afresh
     int colorMode{0};      // 0 blended ball colours, 1 own ball, 2 bottom to top
     float animationSpeed{0.25F};

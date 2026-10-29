@@ -57,11 +57,12 @@ bool settle(inout vec3 p) {
 }
 
 // How crowded `p` is against the rest density (1 even), and the push away
-// from its neighbours.
+// from its neighbours. The point itself counts in too, as in SPH: without
+// it an even lattice reads well under 1 (0.75 with a reach of two spacings).
 float crowd(vec3 p, int self, out vec3 push) {
     float reach = metaballHeader(1).x;
     ivec3 base = ivec3(floor(p / reach));
-    float weight = 0.0;
+    float weight = 1.0;
     push = vec3(0.0);
     for (int z = -1; z <= 1; ++z) {
         for (int y = -1; y <= 1; ++y) {
@@ -187,8 +188,10 @@ void main() {
             float length2 = dot(push, push);
             if (length2 > 0.25 * spacing * spacing) push *= 0.5 * spacing * inversesqrt(length2);
             p += push;
-            // Too crowded: now and then one fades out.
-            if (crowded > 1.2 && chance(index, 20u, 0u) < 0.2 * (crowded - 1.2)) {
+            // Too crowded: now and then one fades out, the more often the
+            // more crowded.
+            float band = metaballHeader(2).z;
+            if (crowded > 1.0 + band && chance(index, 20u, 0u) < 0.5 * (crowded - 1.0 - band) / band) {
                 alive = false;
             }
             life = alive ? min(life + fade, 1.0) : life;
@@ -198,7 +201,7 @@ void main() {
             // A spare particle tries for a gap.
             vec3 candidate;
             vec3 push;
-            if (sampleSurface(index, 22u, candidate) && crowd(candidate, -1, push) < 0.8) {
+            if (sampleSurface(index, 22u, candidate) && crowd(candidate, -1, push) < 1.0 - metaballHeader(2).z) {
                 p = candidate;
                 alive = true;
                 life = fade;

@@ -20,7 +20,8 @@
 // colour and where its share of the area starts, 0, centre and radius the
 // frame before), then from METABALL_HEADER: (reset, frame number, particles,
 // fade step), (neighbour reach, neighbours' weight at the rest density, hash
-// table cells, spacing), (particles to start with, push strength, 0, 0).
+// table cells, spacing), (particles to start with, push strength, density
+// tolerance, 0).
 
 const int METABALL = 4;
 const int METABALL_HEADER = 4 * 24;

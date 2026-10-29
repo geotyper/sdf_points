@@ -884,9 +884,10 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 out[15] = static_cast<float>(metaballBefore_[i].radius);
             }
             float* header = data.data() + static_cast<std::size_t>(metaballLimit) * metaballVec4 * 4U;
-            // Neighbours within two spacings; their summed weight
-            // (1 - r^2 / reach^2)^2 at the rest density is pi reach^2 / 3 per spacing^2.
-            const double reach = 2.0 * spacing;
+            // Neighbours within two and a half spacings; their summed weight
+            // (1 - r^2 / reach^2)^2 at the rest density, the point's own included,
+            // is pi reach^2 / 3 per spacing^2.
+            const double reach = 2.5 * spacing;
             header[0] = reset ? 1.0F : 0.0F;
             header[1] = static_cast<float>(metaballFrame_++ % 1000000U);
             header[2] = static_cast<float>(metaballParticles);
@@ -897,6 +898,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             header[7] = static_cast<float>(spacing);
             header[8] = static_cast<float>(budget);
             header[9] = metaballs.push;
+            header[10] = std::clamp(metaballs.tolerance, 0.02F, 0.5F);
             polytope_.write(data.data(), data.size() * sizeof(float));
             polytopeKey_ = {-1, -1, -1};
             metaballBefore_ = balls;
