@@ -6,6 +6,7 @@
 #include "surfaces4d.glsl"
 #include "origami.glsl"
 #include "shells.glsl"
+#include "metaballs.glsl"
 
 layout(set = 0, binding = 3, std430) readonly buffer SectionHits {
     vec4 sectionHits[];
@@ -260,6 +261,68 @@ void main() {
         vec3 tint = colour.rgb * (1.0 + pc.motion.w) + 0.25 * pc.motion.w;
         tint = tint * (1.0 + 2.0 * pc.motion.z * hinge) + 0.4 * pc.motion.z * hinge;
         radiusPixels *= 1.0 + 0.4 * pc.motion.z * hinge;
+        pointColor = tint * illumination * pc.look.z;
+        pointFacing = 1.0;
+
+        vec4 clip = effectClip(position, viewNormal, radiusPixels);
+        clip.xy += disc * (radiusPixels + 0.65) * 2.0 / pc.view.xy;
+        gl_Position = clip;
+        disc *= (radiusPixels + 0.65) / radiusPixels;
+        return;
+    }
+
+    if (metaballMode()) {
+        // Every ball's Fibonacci sphere, slid out along its directions to
+        // the surface; shown where the ball leads, hidden by the field
+        // between it and the camera.
+        int ball = metaballOf(gl_InstanceIndex);
+        vec4 centre = metaball(ball, 0);
+        int first = int(metaball(ball, 1).w + 0.5);
+        int count = max(int(metaball(ball, 2).x + 0.5), 1);
+        int local = gl_InstanceIndex - first;
+        float y = 1.0 - 2.0 * (float(local) + 0.5) / float(count);
+        float around = 2.39996322973 * float(local);
+        vec3 direction = metaballTurn(vec3(sqrt(max(0.0, 1.0 - y * y)) * cos(around), y,
+                                           sqrt(max(0.0, 1.0 - y * y)) * sin(around)), ball);
+        float t = local < count && gl_InstanceIndex < int(pc.points.x + 0.5)
+                ? metaballRay(ball, direction) : -1.0;
+        vec3 surface = centre.xyz + t * direction;
+        vec3 normal, blend;
+        float lead = 0.0;
+        if (t > 0.0) {
+            metaballShade(ball, surface, normal, blend, lead);
+        }
+        // Points of the losing ball near a seam shrink away under the winner's.
+        float share = smoothstep(0.9, 1.1, lead);
+        vec3 position = pc.shape.x * metaballSpin(surface);
+        vec3 viewNormal = toView(metaballSpin(normal));
+        bool hidden = t <= 0.0 || share <= 0.0;
+        if (!hidden && fx.view.x < 0.5) {
+            hidden = viewNormal.z < -0.05
+                  || metaballHidden(surface, metaballToCamera(), 0.1 * centre.w);
+        }
+        if (hidden) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            pointColor = vec3(0.0);
+            pointFacing = 0.0;
+            return;
+        }
+        vec3 light = normalize(vec3(-0.65, 0.8, 1.15));
+        float diffuse = abs(dot(viewNormal, light));
+        float illumination = 0.12 + 0.88 * pow(diffuse, 0.8);
+        // Stretched out over a bulge the points spread: they grow to match.
+        float stretch = clamp(t / centre.w, 1.0, 2.0);
+        float radiusPixels = pc.points.z * min(pc.view.x, pc.view.y) / 700.0
+                           * mix(0.36, 1.0, illumination) * sqrt(stretch) * share;
+        radiusPixels = max(radiusPixels, 0.30);
+        int colorMode = int(pc.motion.x + 0.5);
+        float height = smoothstep(-pc.shape.z, pc.shape.z, surface.y);
+        vec3 tint = colorMode == 1 ? metaball(ball, 1).rgb
+                  : colorMode == 2 ? mix(pc.style.rgb, pc.wave.rgb, height)
+                                   : blend;
+        // Where two balls meet the seam lights up.
+        float seam = 1.0 - smoothstep(1.0, 3.0, lead);
+        tint = tint * (1.0 + 1.5 * pc.look.w * seam) + 0.3 * pc.look.w * seam;
         pointColor = tint * illumination * pc.look.z;
         pointFacing = 1.0;
 

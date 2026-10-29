@@ -3,6 +3,7 @@
 #include "vkexp/core/Module.hpp"
 #include "vkexp/core/VulkanResource.hpp"
 #include "vkexp/demo/Folding.hpp"
+#include "vkexp/demo/Metaballs.hpp"
 #include "vkexp/profiling/ProfilerTypes.hpp"
 
 #include <array>
@@ -66,6 +67,10 @@ private:
     std::array<int, 2> origamiKey_{-1, -1};
     std::vector<double> foldKey_;
     FoldExtent foldExtent_;
+    // Metaballs: how far the surface reaches over a cycle, again when the
+    // balls' shape or motion changes.
+    std::vector<double> metaballKey_;
+    double metaballBound_{1.0};
     VkFormat depthFormat_{VK_FORMAT_UNDEFINED};
     VkImageLayout depthLayout_{VK_IMAGE_LAYOUT_UNDEFINED};
     VkImageLayout targetLayout_{VK_IMAGE_LAYOUT_UNDEFINED};

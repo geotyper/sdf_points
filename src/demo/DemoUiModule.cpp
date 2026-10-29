@@ -4,6 +4,7 @@
 #include "vkexp/demo/FourSurfaces.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/Folding.hpp"
+#include "vkexp/demo/Metaballs.hpp"
 #include "vkexp/demo/Polytope4D.hpp"
 #include "vkexp/demo/TentaclePatch.hpp"
 #include "vkexp/profiling/Profiler.hpp"
@@ -104,7 +105,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                                        "Arched sphere", "Nested cubes",    "Hopf fibration",
                                        "Tesseract",     "4D polytopes",    "4D cross-sections",
                                        "Quaternion Julia", "4D surfaces", "Origami",
-                                       "Flowing shells"};
+                                       "Flowing shells", "Metaballs"};
     const auto geometryCount = static_cast<int>(geometryNames.size());
     braid.geometryMode = std::clamp(braid.geometryMode, 0, geometryCount - 1);
     if (ImGui::BeginCombo("Geometry",
@@ -119,7 +120,7 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             }
         };
         group("Braids", {0, 1, 2, 3, 10});
-        group("Spheres", {4, 16, 24, 23, 11, 15});
+        group("Spheres", {4, 16, 24, 23, 25, 11, 15});
         group("Four dimensions", {18, 19, 17, 22, 20, 21});
         group("Eversion", {5, 14, 6, 7, 8, 9, 12, 13});
         ImGui::EndCombo();
@@ -642,6 +643,51 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
                 ImGui::PushID(static_cast<int>(i));
                 ImGui::ColorEdit3("##Piece color", state_.palette.colors[i].data());
+                ImGui::PopID();
+            }
+        }
+    } else if (braid.geometryMode == 25) {
+        auto& balls = state_.metaballs;
+        ImGui::Combo("Motion", &balls.motion, metaballMotionNames.data(),
+                     static_cast<int>(metaballMotionNames.size()));
+        ImGui::SliderInt("Balls", &balls.balls, 1, metaballLimit);
+        ImGui::SliderFloat("Ball radius", &balls.radius, 0.1F, 0.7F, "%.2f");
+        ImGui::SliderFloat("Size variation", &balls.variation, 0.0F, 0.7F, "%.2f");
+        ImGui::SliderFloat("Field reach", &balls.reach, 1.2F, 3.5F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("How far a ball's field reaches, in radii: higher, the balls reach out "
+                              "for each other from further and merge softer.");
+        }
+        ImGui::SliderFloat("Spread", &balls.spread, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Breathe", &balls.breathe, 0.0F, 0.4F, "%.2f");
+        ImGui::SliderInt("Seed", &balls.seed, 1, 99);
+        constexpr std::array ballColors{"Blended balls", "Own ball", "Bottom to top"};
+        ImGui::Combo("Colour by", &balls.colorMode, ballColors.data(), static_cast<int>(ballColors.size()));
+        ImGui::SliderFloat("Seam glow", &balls.seamGlow, 0.0F, 2.0F, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Lights up the seams where balls merge.");
+        }
+        ImGui::SeparatorText("Motion");
+        ImGui::Checkbox("Pause", &balls.paused);
+        ImGui::SliderFloat("Speed", &balls.animationSpeed, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Spin", &balls.spin, -3.0F, 3.0F, "%.2f");
+        ImGui::SeparatorText("Points");
+        ImGui::SliderInt("Point budget", &balls.pointBudget, 10000, 1000000, "%d",
+                         ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Point radius (700px)", &balls.pointSize, 0.4F, 3.0F, "%.2f");
+        ImGui::SliderFloat("Glow", &balls.glow, 0.0F, 1.5F, "%.2f");
+        ImGui::SliderFloat("Brightness", &balls.brightness, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Size", &balls.size, 0.3F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Zoom", &balls.zoom, 0.5F, 3.0F, "%.2f");
+        ImGui::SliderAngle("Tilt", &balls.tilt, -90.0F, 90.0F);
+        if (balls.colorMode == 2) {
+            ImGui::ColorEdit3("Bottom color", balls.bottomColor.data());
+            ImGui::ColorEdit3("Top color", balls.topColor.data());
+        } else {
+            ImGui::SeparatorText("Ball palette");
+            for (std::size_t i = 0; i < state_.palette.colors.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::ColorEdit3("##Ball color", state_.palette.colors[i].data());
                 ImGui::PopID();
             }
         }

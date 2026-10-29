@@ -335,6 +335,10 @@ void GraphicsModule::onUpdate(AppContext& context, const FrameInfo& frame) {
             if (!state_.shells.paused) {
                 eversionTime_ += frame.deltaSeconds * state_.shells.animationSpeed;
             }
+        } else if (state_.braid.geometryMode == 25) {
+            if (!state_.metaballs.paused) {
+                eversionTime_ += frame.deltaSeconds * state_.metaballs.animationSpeed;
+            }
         } else if (state_.braid.geometryMode == 21) {
             if (!state_.julia.paused) {
                 eversionTime_ += frame.deltaSeconds * state_.julia.animationSpeed;
@@ -800,6 +804,49 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             polytope_.write(palette.data(), sizeof(palette));
             polytopeKey_ = {-1, -1, -1};
         }
+        // Metaballs: the balls moved on the CPU, three vec4 each with their
+        // share of the points, in the polytope buffer.
+        const auto& metaballs = state_.metaballs;
+        const bool metaballMode = braid.geometryMode == 25;
+        int metaballCount = 0, metaballPoints = 0;
+        MetaballParams ballParams;
+        ballParams.motion = metaballs.motion;
+        ballParams.balls = metaballs.balls;
+        ballParams.radius = metaballs.radius;
+        ballParams.variation = metaballs.variation;
+        ballParams.reach = metaballs.reach;
+        ballParams.spread = metaballs.spread;
+        ballParams.breathe = metaballs.breathe;
+        ballParams.seed = metaballs.seed;
+        if (metaballMode) {
+            const std::vector<double> shapeKey{
+                static_cast<double>(metaballs.motion), static_cast<double>(metaballs.balls),
+                metaballs.radius, metaballs.variation, metaballs.reach, metaballs.spread,
+                metaballs.breathe, static_cast<double>(metaballs.seed)};
+            if (shapeKey != metaballKey_) {
+                metaballKey_ = shapeKey;
+                metaballBound_ = metaballBound(ballParams);
+            }
+            const double rounded = loopCycles_ > 0.0F ? std::round(loopCycles_) / loopCycles_ : 1.0;
+            const auto balls = metaballScene(ballParams, static_cast<double>(eversionTime_) * rounded);
+            const auto first = metaballFirstPoints(balls, ballParams, metaballs.pointBudget);
+            metaballCount = static_cast<int>(balls.size());
+            metaballPoints = first.back();
+            const auto& colors = state_.palette.colors;
+            std::vector<float> data(balls.size() * metaballVec4 * 4U, 0.0F);
+            for (std::size_t i = 0; i < balls.size(); ++i) {
+                float* out = data.data() + i * metaballVec4 * 4U;
+                for (std::size_t k = 0; k < 3; ++k) {
+                    out[k] = static_cast<float>(balls[i].centre[k]);
+                    out[4 + k] = colors[i % colors.size()][k];
+                }
+                out[3] = static_cast<float>(balls[i].radius);
+                out[7] = static_cast<float>(first[i]);
+                out[8] = static_cast<float>(first[i + 1] - first[i]);
+            }
+            polytope_.write(data.data(), data.size() * sizeof(float));
+            polytopeKey_ = {-1, -1, -1};
+        }
         std::array<float, 32> pushConstants{};
         if (braid.geometryMode == 16) {
             pushConstants = {
@@ -906,6 +953,41 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 0.0F,
                 0.0F,
                 origami.zoom,
+            };
+        } else if (metaballMode) {
+            pushConstants = {
+                static_cast<float>(extent.width),
+                static_cast<float>(extent.height),
+                eversionTime_,
+                0.0F,
+                metaballs.size,
+                static_cast<float>(metaballThreshold(metaballs.reach)),
+                static_cast<float>(metaballBound_),
+                static_cast<float>(metaballCount),
+                static_cast<float>(metaballPoints),
+                0.0F,
+                metaballs.pointSize,
+                0.0F,
+                metaballs.tilt,
+                metaballs.glow,
+                metaballs.brightness,
+                metaballs.seamGlow,
+                metaballs.bottomColor[0],
+                metaballs.bottomColor[1],
+                metaballs.bottomColor[2],
+                25.0F,
+                metaballs.topColor[0],
+                metaballs.topColor[1],
+                metaballs.topColor[2],
+                metaballs.spin,
+                static_cast<float>(metaballs.colorMode),
+                metaballs.reach,
+                0.0F,
+                0.0F,
+                loopCycles_,
+                0.0F,
+                0.0F,
+                metaballs.zoom,
             };
         } else if (shellMode) {
             pushConstants = {
@@ -1580,7 +1662,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                                       : braid.strands);
         // See-through leaves the depth clear, so nothing hides any point.
         // The shells are mostly gaps and empty in turn: no skin, they dim with depth.
-        if (!fx.seeThrough && !sectionMode && !shellMode) {
+        // The metaballs hide their points themselves, marching to the camera.
+        if (!fx.seeThrough && !sectionMode && !shellMode && !metaballMode) {
             // A tube of the Hopf fibration or the tesseract needs far fewer
             // cells than the default grid.
             vkCmdDraw(commands,
@@ -1690,6 +1773,8 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             vkCmdDraw(commands, 6, static_cast<std::uint32_t>(origamiPoints), 0, 0);
         } else if (shellMode) {
             vkCmdDraw(commands, 6, static_cast<std::uint32_t>(shellCount * perShell), 0, 0);
+        } else if (metaballMode) {
+            vkCmdDraw(commands, 6, static_cast<std::uint32_t>(metaballPoints), 0, 0);
         } else if (fourSurfaceMode) {
             vkCmdDraw(commands, 6,
                       static_cast<std::uint32_t>(surfacePatches * surfaceGrid.columns *

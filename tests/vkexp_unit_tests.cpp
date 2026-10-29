@@ -8,6 +8,7 @@
 #include "vkexp/demo/LoopPlan.hpp"
 #include "vkexp/demo/NestedCubes.hpp"
 #include "vkexp/demo/Folding.hpp"
+#include "vkexp/demo/Metaballs.hpp"
 #include "vkexp/demo/PointLattice.hpp"
 #include "vkexp/demo/AlgebraicKnot.hpp"
 #include "vkexp/demo/HigherCubes.hpp"
@@ -80,7 +81,7 @@ void testCpuProfiler() {
 
 void testPresetRegistry() {
     vkexp::PresetRegistry registry;
-    check(registry.all().size() == 24, "Built-in preset count");
+    check(registry.all().size() == 25, "Built-in preset count");
     check(registry.require("mixed").graphicsEnabled, "Mixed preset graphics");
     check(registry.require("mixed").computeEnabled, "Mixed preset compute");
     check(registry.require("nested-spheres").initialGeometryMode == 4,
@@ -669,6 +670,9 @@ void testTentaclePatch() {
     check(vkexp::loopDriverLabel(23, vkexp::LoopDriver::Flow) == "Fold cycles" &&
               vkexp::loopDriverLabel(24, vkexp::LoopDriver::Flow) == "Shell hops",
           "Origami and shells loop labels");
+    check(registry.require("metaballs").initialGeometryMode == 25 &&
+              vkexp::loopDriverLabel(25, vkexp::LoopDriver::Flow) == "Metaball cycles",
+          "Metaballs preset and loop label");
     const vkexp::BumpyTorusSettings chain = vkexp::torusChainDefaults();
     check(chain.tubeRadius <= vkexp::torusChainTubeLimit(chain),
           "Chain links fit through each other by default");
@@ -851,6 +855,45 @@ void testOrigami() {
           "Origami folds: closed, mirrored, flat");
 }
 
+void testMetaballs() {
+    constexpr double tau = 6.28318530717958647692;
+    // A ball alone ends at its radius, whatever the reach.
+    for (const double reach : {1.3, 2.0, 3.2}) {
+        const std::vector<vkexp::Metaball> one{{{0.1, -0.2, 0.3}, 0.4}};
+        check(std::abs(vkexp::metaballRay(one, reach, 0, {0.0, 0.0, 1.0}) - 0.4) < 1e-3,
+              "Lone metaball ends at its radius");
+    }
+    // Two close balls merge: the neck between them is filled, the far
+    // sides bulge past the radius; a ray into the partner exits beyond it.
+    const std::vector<vkexp::Metaball> two{{{-0.3, 0.0, 0.0}, 0.4}, {{0.3, 0.0, 0.0}, 0.4}};
+    check(vkexp::metaballField(two, 2.0, {0.0, 0.0, 0.0}) > vkexp::metaballThreshold(2.0), "Neck filled");
+    check(vkexp::metaballRay(two, 2.0, 0, {-1.0, 0.0, 0.0}) > 0.4, "Merged balls bulge");
+    check(vkexp::metaballRay(two, 2.0, 0, {1.0, 0.0, 0.0}) > 0.95, "Ray runs through the partner");
+    // Far apart they keep to themselves.
+    const std::vector<vkexp::Metaball> apart{{{-2.0, 0.0, 0.0}, 0.4}, {{2.0, 0.0, 0.0}, 0.4}};
+    check(std::abs(vkexp::metaballRay(apart, 2.0, 0, {1.0, 0.0, 0.0}) - 0.4) < 1e-3, "Apart balls stay round");
+    // Every motion closes its loop, and the bound holds the surface.
+    for (int motion = 0; motion < vkexp::metaballMotionCount; ++motion) {
+        vkexp::MetaballParams params;
+        params.motion = motion;
+        const auto start = vkexp::metaballScene(params, 0.0);
+        const auto end = vkexp::metaballScene(params, tau);
+        double drift = 0.0;
+        for (std::size_t i = 0; i < start.size(); ++i) {
+            for (std::size_t k = 0; k < 3; ++k) {
+                drift = std::max(drift, std::abs(start[i].centre[k] - end[i].centre[k]));
+            }
+            drift = std::max(drift, std::abs(start[i].radius - end[i].radius));
+        }
+        check(drift < 1e-9, "Metaball motion loops");
+        const double bound = vkexp::metaballBound(params);
+        check(bound > params.radius && bound < 4.0, "Metaball bound");
+        const auto first = vkexp::metaballFirstPoints(start, params, 100000);
+        check(first.size() == start.size() + 1 && std::abs(first.back() - 100000) < 200,
+              "Metaball points shared out");
+    }
+}
+
 void testFolding() {
     constexpr double pi = 3.14159265358979323846;
     const auto net = vkexp::origamiNet(1, 0);
@@ -983,5 +1026,6 @@ int main() {
     testHigherCubes();
     testOrigami();
     testFolding();
+    testMetaballs();
     return failures == 0 ? 0 : 1;
 }

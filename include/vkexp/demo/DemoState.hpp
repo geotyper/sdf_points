@@ -35,7 +35,7 @@ struct ComputeOutput {
 };
 
 struct BraidSettings {
-    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes, 17: Hopf fibration, 18: tesseract, 19: 4D polytopes, 20: 4D cross-sections, 21: quaternion Julia, 22: 4D surfaces, 23: origami, 24: flowing shells
+    int geometryMode{0}; // 0..3: braid variants, 4: nested spheres, 5: punctured sphere, 6: sleeve, 7: morphing sleeve, 8: vortex ring, 9: ridged torus, 10: ridged braid, 11: tentacle sphere, 12: bumpy torus, 13: torus chain, 14: sphere eversion, 15: arched sphere, 16: nested cubes, 17: Hopf fibration, 18: tesseract, 19: 4D polytopes, 20: 4D cross-sections, 21: quaternion Julia, 22: 4D surfaces, 23: origami, 24: flowing shells, 25: metaballs
     bool paused{};
     bool autoRotate{false};
     bool limitTubeOverlap{false};
@@ -501,6 +501,33 @@ struct FlowingShellSettings {
     std::array<float, 3> innerColor{0.14F, 0.58F, 1.00F};
 };
 
+// Metaballs: balls whose fields merge into one surface, every ball with its
+// own sphere of points slid out onto it (Metaballs.hpp).
+struct MetaballSettings {
+    bool paused{};
+    int motion{0};         // 0 orbits, 1 cell division, 2 lava lamp
+    int balls{7};
+    float radius{0.32F};
+    float variation{0.35F};
+    float reach{2.0F};     // field reach in radii: higher, the balls reach out further
+    float spread{0.75F};
+    float breathe{0.12F};
+    int seed{1};
+    float size{1.0F};
+    float zoom{1.0F};
+    float spin{0.0F};
+    float seamGlow{0.6F};
+    int colorMode{0};      // 0 blended ball colours, 1 own ball, 2 bottom to top
+    float animationSpeed{0.25F};
+    int pointBudget{240000};
+    float pointSize{1.1F};
+    float glow{0.18F};
+    float brightness{1.20F};
+    float tilt{0.30F};
+    std::array<float, 3> bottomColor{1.00F, 0.30F, 0.12F};
+    std::array<float, 3> topColor{1.00F, 0.86F, 0.30F};
+};
+
 // Trail of the 4D figures: fading copies drawn at earlier moments, so the
 // projected motion paints its paths.
 struct FourDTrailSettings {
@@ -791,6 +818,7 @@ struct DemoState {
     FourSurfaceSettings fourSurface;
     OrigamiSettings origami;
     FlowingShellSettings shells;
+    MetaballSettings metaballs;
     EversionSettings eversion;
     SleeveSettings sleeve;
     MorphSettings morph;
@@ -839,6 +867,9 @@ struct DemoState {
     } else if (state.braid.geometryMode == 24) {
         inputs.paused = state.shells.paused;
         inputs.animationSpeed = state.shells.animationSpeed;
+    } else if (state.braid.geometryMode == 25) {
+        inputs.paused = state.metaballs.paused;
+        inputs.animationSpeed = state.metaballs.animationSpeed;
     } else if (state.braid.geometryMode == 19) {
         inputs.paused = state.polytope.paused;
         inputs.animationSpeed = state.polytope.animationSpeed;

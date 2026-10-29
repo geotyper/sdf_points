@@ -63,6 +63,9 @@ std::string_view loopDriverLabel(const int geometryMode, const LoopDriver driver
         if (geometryMode == 24) {
             return "Shell hops";
         }
+        if (geometryMode == 25) {
+            return "Metaball cycles";
+        }
         if (geometryMode == 18 || geometryMode == 19) {
             return "Tesseract turns";
         }

@@ -5,6 +5,7 @@
 #include "surfaces4d.glsl"
 #include "origami.glsl"
 #include "shells.glsl"
+#include "metaballs.glsl"
 
 const ivec2 corners[6] = ivec2[](ivec2(0, 0), ivec2(1, 0), ivec2(0, 1),
                                ivec2(0, 1), ivec2(1, 0), ivec2(1, 1));

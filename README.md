@@ -204,6 +204,20 @@ part of the hop, and **Fall sag**, **Scatter** and **Fountain height** shape the
 flights. Negative **Hops per cycle** plays it backwards. There is no hiding skin: the
 far side dims with depth instead. Launch it with `--preset flowing-shells`.
 
+**Metaballs** are balls whose fields add up; the surface is where the sum reaches
+a threshold, so balls that come close reach out with a neck and melt into one blob.
+Every ball carries its own Fibonacci sphere of points; each point keeps its
+direction from the ball's centre and slides out along it to the surface, and shows
+only where its ball's field is the strongest, so merged balls share the skin and a
+swallowed ball's points vanish. There is no depth skin: a point is hidden when the
+field reaches the threshold anywhere on its straight way to the camera. **Motion**
+picks **Orbits** (Lissajous paths), **Cell division** (one cell parting into balls
+and closing again) or **Lava lamp** (balls rising and sinking in a column).
+**Field reach** sets how far the balls reach for each other, **Seam glow** lights the
+seams where they merge, and **Colour by** blends the balls' palette colours across
+the seams, keeps each ball's own, or runs bottom to top. Launch it with
+`--preset metaballs`.
+
 **Origami** is a family of figures made of flat pieces on hinges or creases, picked
 with **Figure**. Each tells the same story once per cycle: closed, open, and with
 **Fold through** on into its mirror, with **Hold closed** and **Hold open** lingering
