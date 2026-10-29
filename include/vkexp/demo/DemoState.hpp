@@ -505,7 +505,7 @@ struct FlowingShellSettings {
 // own sphere of points slid out onto it (Metaballs.hpp).
 struct MetaballSettings {
     bool paused{};
-    int motion{0};         // 0 orbits, 1 cell division, 2 lava lamp
+    int motion{0};         // 0 orbits, 1 cell division, 2 lava lamp, 3 worms, 4 rings, 5 ring fountain
     int balls{7};
     float radius{0.32F};
     float variation{0.35F};

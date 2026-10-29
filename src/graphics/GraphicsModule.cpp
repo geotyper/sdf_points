@@ -819,7 +819,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             polytope_.write(palette.data(), sizeof(palette));
             polytopeKey_ = {-1, -1, -1};
         }
-        // Metaballs: the balls moved on the CPU, four vec4 each with the
+        // Metaballs: the balls moved on the CPU, five vec4 each with the
         // place they had the frame before, then the particles' settings, in
         // the polytope buffer; metaballs.comp carries the particles.
         const auto& metaballs = state_.metaballs;
@@ -858,8 +858,9 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             if (!reset) {
                 for (std::size_t i = 0; i < balls.size(); ++i) {
                     for (std::size_t k = 0; k < 3; ++k) {
-                        reset = reset || std::abs(balls[i].centre[k] - metaballBefore_[i].centre[k]) >
-                                             0.5 * balls[i].radius;
+                        reset = reset ||
+                                std::abs(balls[i].centre[k] - metaballBefore_[i].centre[k]) > balls[i].radius ||
+                                std::abs(balls[i].extent[k] - metaballBefore_[i].extent[k]) > balls[i].radius;
                     }
                 }
             }
@@ -874,14 +875,19 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                                     0.0F);
             for (std::size_t i = 0; i < balls.size(); ++i) {
                 float* out = data.data() + i * metaballVec4 * 4U;
+                const auto group = static_cast<std::size_t>(balls[i].group < 0 ? static_cast<int>(i) : balls[i].group);
                 for (std::size_t k = 0; k < 3; ++k) {
                     out[k] = static_cast<float>(balls[i].centre[k]);
-                    out[4 + k] = colors[i % colors.size()][k];
+                    out[4 + k] = colors[group % colors.size()][k];
+                    out[8 + k] = static_cast<float>(balls[i].extent[k]);
                     out[12 + k] = static_cast<float>(metaballBefore_[i].centre[k]);
+                    out[16 + k] = static_cast<float>(metaballBefore_[i].extent[k]);
                 }
                 out[3] = static_cast<float>(balls[i].radius);
                 out[7] = static_cast<float>(starts[i]);
+                out[11] = balls[i].ring ? 1.0F : 0.0F;
                 out[15] = static_cast<float>(metaballBefore_[i].radius);
+                out[19] = static_cast<float>(group);
             }
             float* header = data.data() + static_cast<std::size_t>(metaballLimit) * metaballVec4 * 4U;
             // Neighbours within two and a half spacings; their summed weight

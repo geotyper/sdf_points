@@ -218,8 +218,16 @@ the gaps, each placed where every stretch of the surface is as likely. So the
 density stays even however the surface merges, stretches or splits. There is no
 depth skin: a point is hidden when the field reaches the threshold anywhere on its
 straight way to the camera. **Motion** picks **Orbits** (Lissajous paths), **Cell
-division** (one cell parting into balls and closing again) or **Lava lamp** (balls
-rising and sinking in a column). **Field reach** sets how far the balls reach for
+division** (one cell parting into balls and closing again), **Lava lamp** (balls
+rising and sinking in a column), or one of the figures that are not balls: a
+"ball" can also be a capsule (the field of a segment) or a ring (a torus). **Worms**
+are chains of capsules, four to a worm, following their head along a Lissajous
+path; the capsules of one worm take the strongest of their fields instead of the
+sum, so a worm is one smooth tube with no bulge at its joints, and worms melt into
+each other as balls do. **Rings** are tori tumbling through each other, and **Ring
+fountain** is a level ring with balls winding round its tube, up through the hole
+and down outside, webbing to the rim as they pass. **Balls** counts the segments,
+rings, or the ring and its balls. **Field reach** sets how far the balls reach for
 each other, **Seam glow** lights the seams where they merge, and **Colour by**
 blends the balls' palette colours across the seams, takes the strongest ball's, or
 runs bottom to top. **Point budget** sets the density (over the balls' area apart),

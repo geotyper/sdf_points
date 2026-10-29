@@ -651,6 +651,11 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
         ImGui::Combo("Motion", &balls.motion, metaballMotionNames.data(),
                      static_cast<int>(metaballMotionNames.size()));
         ImGui::SliderInt("Balls", &balls.balls, 1, metaballLimit);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Worms: segments, %d to a worm. Rings: the rings. Ring fountain: the "
+                              "ring and the balls winding through it.",
+                              metaballWormSegments);
+        }
         ImGui::SliderFloat("Ball radius", &balls.radius, 0.1F, 0.7F, "%.2f");
         ImGui::SliderFloat("Size variation", &balls.variation, 0.0F, 0.7F, "%.2f");
         ImGui::SliderFloat("Field reach", &balls.reach, 1.2F, 3.5F, "%.2f");

@@ -1,4 +1,4 @@
-// Metaballs (mode 25): balls whose fields add up, the surface where the sum
+// Metaballs (mode 25): balls (or capsules and rings) whose fields add up, the surface where the sum
 // reaches a threshold (Metaballs.hpp moves the balls on the CPU). The points
 // are particles living on the surface (after Witkin and Heckbert), kept from
 // frame to frame by metaballs.comp: each frame they are carried along with a
@@ -16,15 +16,22 @@
 // motion = colour mode (0 blended, 1 own ball, 2 bottom to top), field reach
 // in radii, oversampling of new particles, seam sharpness; loop = cycles,
 // 0, 0, zoom.
-// The polytope storage buffer holds four vec4 per ball (centre and radius,
-// colour and where its share of the area starts, 0, centre and radius the
-// frame before), then from METABALL_HEADER: (reset, frame number, particles,
-// fade step), (neighbour reach, neighbours' weight at the rest density, hash
-// table cells, spacing), (particles to start with, push strength, density
-// tolerance, 0).
+// The polytope storage buffer holds five vec4 per ball (centre and radius,
+// colour and where its share of the area starts, extent and kind, centre and
+// radius the frame before, extent the frame before and group), then from
+// METABALL_HEADER: (reset, frame number, particles, fade step), (neighbour
+// reach, neighbours' weight at the rest density, hash table cells, spacing),
+// (particles to start with, push strength, density tolerance, 0).
+//
+// A "ball" has a core: its centre alone, a segment centre +- extent (a
+// capsule), or with kind 1 a ring of radius |extent| about the extent's axis
+// (a torus). Its field falls off with the distance from the nearest point of
+// the core. Balls of one group (consecutive, as a worm's segments) take the
+// strongest of their fields instead of the sum, so a chain is one smooth tube
+// with no bulge at the joints; groups add up as before.
 
-const int METABALL = 4;
-const int METABALL_HEADER = 4 * 24;
+const int METABALL = 5;
+const int METABALL_HEADER = METABALL * 24;
 // Particle slots in the shared storage buffer (binding 3): position and
 // life, (alive, 0, 0, 0), scratch position and life. The neighbour table
 // follows, METABALL_CELL uints per cell: a count and the particles.
@@ -44,36 +51,85 @@ int metaballCount() {
     return max(int(pc.shape.w + 0.5), 1);
 }
 
+int metaballGroup(int ball) {
+    return int(metaball(ball, 4).w + 0.5);
+}
+
 float metaballSpan() {
     return pc.shape.x * pc.shape.z * 1.08 / max(pc.loop.w, 0.05);
 }
 
-float metaballField(vec3 p) {
-    float sum = 0.0;
-    for (int i = 0; i < metaballCount(); ++i) {
-        vec4 b = metaball(i, 0);
-        float far = pc.motion.y * b.w;
-        vec3 d = p - b.xyz;
-        float q = 1.0 - dot(d, d) / (far * far);
-        sum += q > 0.0 ? q * q * q : 0.0;
+// A unit vector square to `axis`.
+vec3 metaballAcross(vec3 axis) {
+    return normalize(cross(axis, abs(axis.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+}
+
+// The point of the core (centre `ball.xyz`, extent and kind `extent`) nearest `p`.
+vec3 metaballCore(vec4 ball, vec4 extent, vec3 p) {
+    vec3 v = p - ball.xyz;
+    if (extent.w > 0.5) {
+        float major = length(extent.xyz);
+        vec3 axis = extent.xyz / max(major, 1e-9);
+        vec3 around = v - axis * dot(v, axis);
+        float l = length(around);
+        return ball.xyz + major * (l > 1e-9 ? around / l : metaballAcross(axis));
     }
-    return sum;
+    float e2 = dot(extent.xyz, extent.xyz);
+    float s = e2 > 1e-12 ? clamp(dot(v, extent.xyz) / e2, -1.0, 1.0) : 0.0;
+    return ball.xyz + s * extent.xyz;
+}
+
+// 1 - d^2 / R^2 for ball `ball` at `p` (the kernel is its cube where
+// positive), d the offset from the core and R the field's reach.
+float metaballFalloff(int ball, vec3 p, out vec3 offset, out float far) {
+    vec4 b = metaball(ball, 0);
+    offset = p - metaballCore(b, metaball(ball, 2), p);
+    far = pc.motion.y * b.w;
+    return 1.0 - dot(offset, offset) / (far * far);
+}
+
+float metaballField(vec3 p) {
+    float sum = 0.0, best = 0.0;
+    int group = -1;
+    for (int i = 0; i < metaballCount(); ++i) {
+        int g = metaballGroup(i);
+        if (g != group) {
+            sum += best;
+            best = 0.0;
+            group = g;
+        }
+        vec3 d;
+        float far;
+        float q = metaballFalloff(i, p, d, far);
+        if (q > 0.0) best = max(best, q * q * q);
+    }
+    return sum + best;
 }
 
 // The field and its gradient.
 float metaballField(vec3 p, out vec3 gradient) {
-    float sum = 0.0;
+    float sum = 0.0, best = 0.0;
+    vec3 bestGradient = vec3(0.0);
     gradient = vec3(0.0);
+    int group = -1;
     for (int i = 0; i < metaballCount(); ++i) {
-        vec4 b = metaball(i, 0);
-        float far = pc.motion.y * b.w;
-        vec3 d = p - b.xyz;
-        float q = 1.0 - dot(d, d) / (far * far);
-        if (q <= 0.0) continue;
-        sum += q * q * q;
-        gradient -= 6.0 * q * q * d / (far * far);
+        int g = metaballGroup(i);
+        if (g != group) {
+            sum += best;
+            gradient += bestGradient;
+            best = 0.0;
+            bestGradient = vec3(0.0);
+            group = g;
+        }
+        vec3 d;
+        float far;
+        float q = metaballFalloff(i, p, d, far);
+        if (q <= 0.0 || q * q * q <= best) continue;
+        best = q * q * q;
+        bestGradient = -6.0 * q * q * d / (far * far);
     }
-    return sum;
+    gradient += bestGradient;
+    return sum + best;
 }
 
 // The ball whose share of the total area holds `u` (0..1).
@@ -90,15 +146,15 @@ int metaballOf(float u) {
     return low;
 }
 
-// From the ball's centre along `direction`, the first distance where the
-// field falls below the threshold (-1 if the march meets none). The ball's
-// own field holds the threshold up to its radius, so the march starts there.
-float metaballRay(int ball, vec3 direction) {
-    vec4 b = metaball(ball, 0);
+// From `origin` on a ball's core along `direction`: the first distance where
+// the field falls below the threshold (-1 if the march meets none). The
+// ball's own field holds the threshold up to its radius, so the march starts
+// there.
+float metaballRay(vec3 origin, float radius, vec3 direction) {
     float threshold = pc.shape.y;
-    float low = b.w, step = 0.15 * b.w, high = -1.0;
+    float low = radius, step = 0.15 * radius, high = -1.0;
     for (int k = 0; k < 64; ++k) {
-        if (metaballField(b.xyz + (low + step) * direction) < threshold) {
+        if (metaballField(origin + (low + step) * direction) < threshold) {
             high = low + step;
             break;
         }
@@ -107,7 +163,7 @@ float metaballRay(int ball, vec3 direction) {
     if (high < 0.0) return -1.0;
     for (int k = 0; k < 10; ++k) {
         float middle = 0.5 * (low + high);
-        if (metaballField(b.xyz + middle * direction) < threshold) {
+        if (metaballField(origin + middle * direction) < threshold) {
             high = middle;
         } else {
             low = middle;
@@ -116,33 +172,43 @@ float metaballRay(int ball, vec3 direction) {
     return 0.5 * (low + high);
 }
 
-// At `p`: the outward normal, the blend of the balls' colours by their
-// fields, the strongest ball, and how far it leads: the largest of the
-// shares that go as the fields to the power `sharpness` and add up to 1.
+// At `p`: the outward normal, the blend of the groups' colours by their
+// fields, the strongest ball, and how far its group leads: the largest of
+// the shares that go as the fields to the power `sharpness` and add up to 1.
 void metaballShade(vec3 p, out vec3 normal, out vec3 blend, out int strongest, out float leading) {
-    vec3 gradient = vec3(0.0);
+    metaballField(p, normal);
+    normal = normalize(-normal + vec3(1e-7, 0.0, 0.0));
     blend = vec3(0.0);
     float total = 0.0, weights = 0.0, most = 0.0;
     float sharpness = max(pc.motion.w, 0.5);
+    float best = 0.0;
+    int bestBall = 0, group = -1;
     strongest = 0;
-    for (int i = 0; i < metaballCount(); ++i) {
-        vec4 b = metaball(i, 0);
-        float far = pc.motion.y * b.w;
-        vec3 d = p - b.xyz;
-        float q = 1.0 - dot(d, d) / (far * far);
-        if (q <= 0.0) continue;
-        float k = q * q * q;
-        gradient += 6.0 * q * q * d / (far * far);
-        blend += k * metaball(i, 1).rgb;
-        total += k;
-        float weight = pow(k, sharpness);
-        weights += weight;
-        if (weight > most) {
-            most = weight;
-            strongest = i;
+    for (int i = 0; i <= metaballCount(); ++i) {
+        int g = i < metaballCount() ? metaballGroup(i) : -2;
+        if (g != group) {
+            if (best > 0.0) {
+                blend += best * metaball(bestBall, 1).rgb;
+                total += best;
+                float weight = pow(best, sharpness);
+                weights += weight;
+                if (weight > most) {
+                    most = weight;
+                    strongest = bestBall;
+                }
+            }
+            best = 0.0;
+            group = g;
+        }
+        if (i == metaballCount()) break;
+        vec3 d;
+        float far;
+        float q = metaballFalloff(i, p, d, far);
+        if (q > 0.0 && q * q * q > best) {
+            best = q * q * q;
+            bestBall = i;
         }
     }
-    normal = normalize(gradient + vec3(1e-7, 0.0, 0.0));
     blend /= max(total, 1e-6);
     leading = most / max(weights, 1e-30);
 }
@@ -168,6 +234,7 @@ vec3 metaballToCamera() {
 bool metaballHidden(vec3 p, vec3 along, float step) {
     float threshold = pc.shape.y;
     float travel = 2.0 * pc.shape.z;
+    step = max(step, travel / 96.0);
     float t = 1.5 * step;
     for (int k = 0; k < 96 && t < travel; ++k) {
         if (metaballField(p + t * along) >= threshold) return true;

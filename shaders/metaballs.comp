@@ -85,37 +85,63 @@ float crowd(vec3 p, int self, out vec3 push) {
     return weight / metaballHeader(1).y;
 }
 
-// A point on the surface where every stretch of it is equally likely: a
-// ball picked by its area, a direction from its centre out to the surface,
-// kept with the chance that undoes the stretch along the ray and with the
-// ball's share of the surface there.
+// A point on the surface where every stretch of it is about equally likely:
+// a ball picked by its area, a point of its core and a direction from there
+// out to the surface, kept with the chance that undoes the stretch along the
+// ray and with the ball's share of the surface there. A capsule's rays from
+// all along its segment cover its side evenly as they are; a ring's rays
+// run square to it, kept more often on the outer side, which is wider.
 bool sampleSurface(int index, uint attempt, out vec3 p) {
     int ball = metaballOf(chance(index, attempt, 0u));
+    vec4 b = metaball(ball, 0), extent = metaball(ball, 2);
     float z = 2.0 * chance(index, attempt, 1u) - 1.0;
     float around = TAU * chance(index, attempt, 2u);
     vec3 direction = vec3(sqrt(max(0.0, 1.0 - z * z)) * cos(around), z,
                           sqrt(max(0.0, 1.0 - z * z)) * sin(around));
-    float t = metaballRay(ball, direction);
+    vec3 origin = b.xyz;
+    float major = length(extent.xyz);
+    float stretch = 1.0;
+    if (extent.w > 0.5) {
+        vec3 axis = extent.xyz / max(major, 1e-9);
+        vec3 u = metaballAcross(axis), v = cross(axis, u);
+        float turn = TAU * chance(index, attempt, 4u);
+        vec3 radial = cos(turn) * u + sin(turn) * v;
+        origin += major * radial;
+        direction = cos(around) * radial + sin(around) * axis;
+        stretch = (major + b.w * cos(around)) / (major + b.w);
+    } else if (major > 1e-6) {
+        origin += (2.0 * chance(index, attempt, 4u) - 1.0) * extent.xyz;
+    }
+    float t = metaballRay(origin, b.w, direction);
     if (t <= 0.0) return false;
-    vec4 b = metaball(ball, 0);
-    p = b.xyz + t * direction;
+    p = origin + t * direction;
     float sharpness = max(pc.motion.w, 0.5);
     float own = 0.0, weights = 0.0;
-    vec3 gradient = vec3(0.0);
     for (int i = 0; i < metaballCount(); ++i) {
-        vec4 other = metaball(i, 0);
-        float far = pc.motion.y * other.w;
-        vec3 d = p - other.xyz;
-        float q = 1.0 - dot(d, d) / (far * far);
+        vec3 d;
+        float far;
+        float q = metaballFalloff(i, p, d, far);
         if (q <= 0.0) continue;
-        gradient += q * q * d / (far * far);
         float weight = pow(q * q * q, sharpness);
         weights += weight;
         if (i == ball) own = weight;
     }
-    float slant = max(dot(normalize(gradient + vec3(1e-9, 0.0, 0.0)), direction), 0.15);
-    float keep = own / max(weights, 1e-30) * t * t / (max(pc.motion.z, 1.0) * b.w * b.w * slant);
+    if (extent.w < 0.5 && major <= 1e-6) {
+        vec3 gradient;
+        metaballField(p, gradient);
+        float slant = max(dot(normalize(-gradient + vec3(1e-9, 0.0, 0.0)), direction), 0.15);
+        stretch = t * t / (b.w * b.w * slant);
+    }
+    float keep = own / max(weights, 1e-30) * stretch / max(pc.motion.z, 1.0);
     return chance(index, attempt, 3u) < keep;
+}
+
+// Rotates `x` by the turn that takes the unit vector `from` to `to`.
+vec3 turnBetween(vec3 from, vec3 to, vec3 x) {
+    vec3 v = cross(from, to);
+    float c = dot(from, to);
+    if (c < -0.999) return x;
+    return x * c + cross(v, x) + v * dot(v, x) / (1.0 + c);
 }
 
 void main() {
@@ -145,17 +171,31 @@ void main() {
                 life = alive ? 1.0 : 0.0;
             }
         } else if (alive || life > 0.0) {
-            // Carried by the balls, each as much as its field holds here.
+            // Carried by the balls, each as much as its field holds here:
+            // the nearest point of its core the frame before goes where
+            // the core took it, turned and stretched with it, and the
+            // offset from there turns and swells along.
             vec3 move = vec3(0.0);
             float total = 0.0;
             for (int i = 0; i < metaballCount(); ++i) {
                 vec4 now = metaball(i, 0), before = metaball(i, 3);
+                vec4 extentNow = metaball(i, 2);
+                vec4 extentBefore = vec4(metaball(i, 4).xyz, extentNow.w);
+                vec3 core = metaballCore(before, extentBefore, p);
+                vec3 d = p - core;
                 float far = pc.motion.y * before.w;
-                vec3 d = p - before.xyz;
                 float q = 1.0 - dot(d, d) / (far * far);
                 if (q <= 0.0) continue;
                 float k = q * q * q;
-                move += k * (now.xyz - before.xyz + (now.w / before.w - 1.0) * d);
+                float lengthBefore = length(extentBefore.xyz), lengthNow = length(extentNow.xyz);
+                vec3 arm = core - before.xyz;
+                if (lengthBefore > 1e-6 && lengthNow > 1e-6) {
+                    vec3 from = extentBefore.xyz / lengthBefore, to = extentNow.xyz / lengthNow;
+                    arm = lengthNow / lengthBefore * turnBetween(from, to, arm);
+                    d = turnBetween(from, to, d);
+                }
+                vec3 target = now.xyz + arm + now.w / before.w * d;
+                move += k * (target - p);
                 total += k;
             }
             p += move / max(total, 1e-12);

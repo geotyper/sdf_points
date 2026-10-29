@@ -872,6 +872,32 @@ void testMetaballs() {
     // Far apart they keep to themselves.
     const std::vector<vkexp::Metaball> apart{{{-2.0, 0.0, 0.0}, 0.4}, {{2.0, 0.0, 0.0}, 0.4}};
     check(std::abs(vkexp::metaballRay(apart, 2.0, 0, {1.0, 0.0, 0.0}) - 0.4) < 1e-3, "Apart balls stay round");
+    // A capsule and a ring alone end their radius out from their cores; a
+    // chain of capsules in one group has no bulge at the joint, while
+    // separate ones add up there.
+    {
+        vkexp::Metaball capsule{{0.0, 0.0, 0.0}, 0.2};
+        capsule.extent = {0.5, 0.0, 0.0};
+        check(std::abs(vkexp::metaballRay({capsule}, 2.0, {0.3, 0.0, 0.0}, 0.2, {0.0, 1.0, 0.0}) - 0.2) < 1e-3 &&
+                  std::abs(vkexp::metaballRay({capsule}, 2.0, {0.5, 0.0, 0.0}, 0.2, {1.0, 0.0, 0.0}) - 0.2) < 1e-3,
+              "Lone capsule ends at its radius");
+        vkexp::Metaball ring{{0.1, 0.0, 0.0}, 0.15};
+        ring.extent = {0.0, 0.0, 0.6};
+        ring.ring = true;
+        check(std::abs(vkexp::metaballRay({ring}, 2.0, {0.1, 0.6, 0.0}, 0.15, {0.0, 1.0, 0.0}) - 0.15) < 1e-3 &&
+                  std::abs(vkexp::metaballRay({ring}, 2.0, {0.1, 0.6, 0.0}, 0.15, {0.0, -1.0, 0.0}) - 0.15) < 1e-3 &&
+                  vkexp::metaballField({ring}, 2.0, {0.1, 0.0, 0.0}) == 0.0,
+              "Lone ring ends at its radius, its hole open");
+        vkexp::Metaball left{{-0.25, 0.0, 0.0}, 0.2}, right{{0.25, 0.0, 0.0}, 0.2};
+        left.extent = right.extent = {0.25, 0.0, 0.0};
+        left.group = right.group = 0;
+        check(std::abs(vkexp::metaballRay({left, right}, 2.0, {0.0, 0.0, 0.0}, 0.2, {0.0, 0.0, 1.0}) - 0.2) < 1e-3,
+              "Chained capsules meet without a bulge");
+        left.group = -1;
+        right.group = -1;
+        check(vkexp::metaballRay({left, right}, 2.0, {0.0, 0.0, 0.0}, 0.2, {0.0, 0.0, 1.0}) > 0.22,
+              "Separate capsules bulge where they meet");
+    }
     // Every motion closes its loop, and the bound holds the surface.
     for (int motion = 0; motion < vkexp::metaballMotionCount; ++motion) {
         vkexp::MetaballParams params;
@@ -882,6 +908,9 @@ void testMetaballs() {
         for (std::size_t i = 0; i < start.size(); ++i) {
             for (std::size_t k = 0; k < 3; ++k) {
                 drift = std::max(drift, std::abs(start[i].centre[k] - end[i].centre[k]));
+            }
+            for (std::size_t k = 0; k < 3; ++k) {
+                drift = std::max(drift, std::abs(start[i].extent[k] - end[i].extent[k]));
             }
             drift = std::max(drift, std::abs(start[i].radius - end[i].radius));
         }
