@@ -221,9 +221,10 @@ straight way to the camera. **Motion** picks **Orbits** (Lissajous paths), **Cel
 division** (one cell parting into balls and closing again), **Lava lamp** (balls
 rising and sinking in a column), or one of the figures that are not balls: a
 "ball" can also be a capsule (the field of a segment) or a ring (a torus). **Worms**
-are chains of capsules, four to a worm, following their head along a Lissajous
-path; the capsules of one worm take the strongest of their fields instead of the
-sum, so a worm is one smooth tube with no bulge at its joints, and worms melt into
+are smooth tubes along a curve given by a formula: the head runs a Lissajous path,
+the body follows it, and a wave of bends runs from head to tail, so the worm
+wriggles; ten capsules trace the curve and take the strongest of their fields
+instead of the sum, so the tube has no bulge at the joints, and worms melt into
 each other as balls do. **Rings** are tori tumbling through each other, and **Ring
 fountain** is a level ring with balls winding round its tube, up through the hole
 and down outside, webbing to the rim as they pass. A "ball" can be a cube too: a
@@ -231,7 +232,14 @@ turned cube core whose field gives a rounded cube, **Roundness** setting how rou
 (1 is a ball). **Dice** are cubes tumbling on Lissajous paths and melting where they
 meet, and **Cube block** is one block of cubes face to face (8 or 27 make it whole)
 that parts while every cube tumbles a whole number of turns, and closes again square
-as it was. **Balls** counts the segments, rings, cubes, or the ring and its balls. **Field reach** sets how far the balls reach for
+as it was. **Cube carpet** is a square of cubes face to face (up to 8 by 8) with a
+wave running across it, lifting the cubes and tilting them with its slope, so the
+crests melt into ridges. A ball's field can also count negatively: in **Holes**
+balls of negative weight fly through a blob of big balls, carving dents, tunnels
+and bubbles, and in **Peristalsis** rings slide up and down a swaying capsule one
+after another, the negative ones pinching a waist into it and the others standing
+round it as collars webbed to it. **Balls** counts the worms, rings, cubes, or the
+ring and its balls (see its tooltip). Up to 64 balls can take part. **Field reach** sets how far the balls reach for
 each other, **Seam glow** lights the seams where they merge, and **Colour by**
 blends the balls' palette colours across the seams, takes the strongest ball's, or
 runs bottom to top. **Point budget** sets the density (over the balls' area apart),

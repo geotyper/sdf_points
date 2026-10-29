@@ -19,7 +19,7 @@
 // The polytope storage buffer holds six vec4 per ball (centre and radius,
 // colour and where its share of the area starts, extent and kind, centre and
 // radius the frame before, extent the frame before and group, a cube's half
-// size now and the frame before), then from
+// size now and the frame before and its field's weight), then from
 // METABALL_HEADER: (reset, frame number, particles, fade step), (neighbour
 // reach, neighbours' weight at the rest density, hash table cells, spacing),
 // (particles to start with, push strength, density tolerance, 0).
@@ -31,10 +31,11 @@
 // cube. Its field falls off with the distance from the nearest point of
 // the core. Balls of one group (consecutive, as a worm's segments) take the
 // strongest of their fields instead of the sum, so a chain is one smooth tube
-// with no bulge at the joints; groups add up as before.
+// with no bulge at the joints; groups add up as before, each times its
+// weight: a negative weight carves dents, holes and waists instead.
 
 const int METABALL = 6;
-const int METABALL_HEADER = METABALL * 24;
+const int METABALL_HEADER = METABALL * 64;
 // Particle slots in the shared storage buffer (binding 3): position and
 // life, (alive, 0, 0, 0), scratch position and life. The neighbour table
 // follows, METABALL_CELL uints per cell: a count (with a birth flag above
@@ -59,6 +60,10 @@ int metaballCount() {
 
 int metaballGroup(int ball) {
     return int(metaball(ball, 4).w + 0.5);
+}
+
+float metaballWeight(int ball) {
+    return metaball(ball, 5).z;
 }
 
 float metaballSpan() {
@@ -108,13 +113,14 @@ float metaballFalloff(int ball, vec3 p, out vec3 offset, out float far) {
 }
 
 float metaballField(vec3 p) {
-    float sum = 0.0, best = 0.0;
+    float sum = 0.0, best = 0.0, weight = 1.0;
     int group = -1;
     for (int i = 0; i < metaballCount(); ++i) {
         int g = metaballGroup(i);
         if (g != group) {
-            sum += best;
+            sum += weight * best;
             best = 0.0;
+            weight = metaballWeight(i);
             group = g;
         }
         vec3 d;
@@ -122,22 +128,23 @@ float metaballField(vec3 p) {
         float q = metaballFalloff(i, p, d, far);
         if (q > 0.0) best = max(best, q * q * q);
     }
-    return sum + best;
+    return sum + weight * best;
 }
 
 // The field and its gradient.
 float metaballField(vec3 p, out vec3 gradient) {
-    float sum = 0.0, best = 0.0;
+    float sum = 0.0, best = 0.0, weight = 1.0;
     vec3 bestGradient = vec3(0.0);
     gradient = vec3(0.0);
     int group = -1;
     for (int i = 0; i < metaballCount(); ++i) {
         int g = metaballGroup(i);
         if (g != group) {
-            sum += best;
-            gradient += bestGradient;
+            sum += weight * best;
+            gradient += weight * bestGradient;
             best = 0.0;
             bestGradient = vec3(0.0);
+            weight = metaballWeight(i);
             group = g;
         }
         vec3 d;
@@ -147,8 +154,8 @@ float metaballField(vec3 p, out vec3 gradient) {
         best = q * q * q;
         bestGradient = -6.0 * q * q * d / (far * far);
     }
-    gradient += bestGradient;
-    return sum + best;
+    gradient += weight * bestGradient;
+    return sum + weight * best;
 }
 
 // The ball whose share of the total area holds `u` (0..1).
@@ -191,8 +198,8 @@ float metaballRay(vec3 origin, float radius, float step, vec3 direction) {
     return 0.5 * (low + high);
 }
 
-// At `p`: the outward normal, the blend of the groups' colours by their
-// fields, the strongest ball, and how far its group leads: the largest of
+// At `p`: the outward normal, the blend of the (positive) groups' colours by
+// their fields, the strongest ball, and how far its group leads: the largest of
 // the shares that go as the fields to the power `sharpness` and add up to 1.
 void metaballShade(vec3 p, out vec3 normal, out vec3 blend, out int strongest, out float leading) {
     metaballField(p, normal);
@@ -223,7 +230,7 @@ void metaballShade(vec3 p, out vec3 normal, out vec3 blend, out int strongest, o
         vec3 d;
         float far;
         float q = metaballFalloff(i, p, d, far);
-        if (q > 0.0 && q * q * q > best) {
+        if (q > 0.0 && q * q * q > best && metaballWeight(i) > 0.0) {
             best = q * q * q;
             bestBall = i;
         }

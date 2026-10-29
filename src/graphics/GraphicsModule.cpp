@@ -892,6 +892,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 out[19] = static_cast<float>(group);
                 out[20] = static_cast<float>(balls[i].half);
                 out[21] = static_cast<float>(metaballBefore_[i].half);
+                out[22] = static_cast<float>(balls[i].weight);
             }
             float* header = data.data() + static_cast<std::size_t>(metaballLimit) * metaballVec4 * 4U;
             // Neighbours within two and a half spacings; their summed weight

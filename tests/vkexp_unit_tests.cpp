@@ -910,6 +910,14 @@ void testMetaballs() {
                   vkexp::metaballField({cube}, 2.0, {0.2 + 0.4, 0.0, 0.0}) > vkexp::metaballThreshold(2.0) &&
                   vkexp::metaballField({cube}, 2.0, {0.2 + 0.3, 0.29, 0.0}) == 1.0,
               "Turned cube");
+        // A ball of negative weight dents a ball it overlaps.
+        const vkexp::Metaball solid{{0.0, 0.0, 0.0}, 0.4};
+        vkexp::Metaball hollow{{0.5, 0.0, 0.0}, 0.2};
+        hollow.weight = -2.0;
+        check(vkexp::metaballField({solid, hollow}, 2.0, {0.3, 0.0, 0.0}) < vkexp::metaballThreshold(2.0) &&
+                  std::abs(vkexp::metaballRay({solid, hollow}, 2.0, 0, {-1.0, 0.0, 0.0}) - 0.4) < 1e-3 &&
+                  vkexp::metaballArea(hollow) == 0.0,
+              "Negative ball dents");
     }
     // Every motion closes its loop, and the bound holds the surface.
     for (int motion = 0; motion < vkexp::metaballMotionCount; ++motion) {
@@ -932,7 +940,7 @@ void testMetaballs() {
         check(bound > params.radius && bound < 4.0, "Metaball bound");
         const auto starts = vkexp::metaballAreaStarts(start);
         check(starts.size() == start.size() && starts.front() == 0.0 &&
-                  std::is_sorted(starts.begin(), starts.end()) && starts.back() < 1.0,
+                  std::is_sorted(starts.begin(), starts.end()) && starts.back() <= 1.0,
               "Metaball area shares");
         // Four balls of radius 1 hold 4 * 4 pi points at spacing 1.
         const std::vector<vkexp::Metaball> unit(4, vkexp::Metaball{{0.0, 0.0, 0.0}, 1.0});

@@ -128,7 +128,7 @@ bool sampleSurface(int index, uint attempt, out vec3 p) {
         vec3 d;
         float far;
         float q = metaballFalloff(i, p, d, far);
-        if (q <= 0.0) continue;
+        if (q <= 0.0 || metaballWeight(i) <= 0.0) continue;
         float weight = pow(q * q * q, sharpness);
         weights += weight;
         if (i == ball) own = weight;

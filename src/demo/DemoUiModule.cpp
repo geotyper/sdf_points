@@ -652,12 +652,14 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                      static_cast<int>(metaballMotionNames.size()));
         ImGui::SliderInt("Balls", &balls.balls, 1, metaballLimit);
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Worms: segments, %d to a worm. Rings: the rings. Ring fountain: the "
+            ImGui::SetTooltip("Worms: the worms (up to %d). Rings: the rings. Ring fountain: the "
                               "ring and the balls winding through it. Cube block: the cubes, filling "
-                              "a block row by row (8 or 27 make it whole).",
-                              metaballWormSegments);
+                              "a block row by row (8 or 27 make it whole). Holes: a third are the "
+                              "blob, the rest carve. Peristalsis: the capsule and its rings. Cube "
+                              "carpet: the cubes, rounded up to a square (up to 8 by 8).",
+                              metaballWormLimit);
         }
-        if (balls.motion == 6 || balls.motion == 7) {
+        if (balls.motion == 6 || balls.motion == 7 || balls.motion == 10) {
             ImGui::SliderFloat("Roundness", &balls.roundness, 0.08F, 1.0F, "%.2f");
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("How rounded the cubes are: 1 is a ball.");
