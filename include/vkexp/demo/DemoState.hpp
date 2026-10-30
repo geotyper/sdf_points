@@ -513,6 +513,8 @@ struct MetaballSettings {
     float spread{0.75F};
     float breathe{0.12F};
     float roundness{0.3F}; // a cube's rounding, as a share of its half size
+    float wormWidth{0.12F}; // a worm's radius, the tail tapering from it
+    int wormLinks{12};      // capsules tracing a worm
     int seed{1};
     float size{1.0F};
     float zoom{1.0F};

@@ -223,9 +223,11 @@ rising and sinking in a column), or one of the figures that are not balls: a
 "ball" can also be a capsule (the field of a segment) or a ring (a torus). **Worms**
 are smooth tubes along a curve given by a formula: the head runs a Lissajous path,
 the body follows it, and a wave of bends runs from head to tail, so the worm
-wriggles; ten capsules trace the curve and take the strongest of their fields
-instead of the sum, so the tube has no bulge at the joints, and worms melt into
-each other as balls do. **Rings** are tori tumbling through each other, and **Ring
+wriggles. **Worm links** capsules trace the curve and take the strongest of their
+fields instead of the sum, so the tube has no bulge at the joints, and worms melt
+into each other as balls do. The tube is **Worm thickness** all along, its last
+third tapering to a quarter of it: the capsules there are cones, their radius
+running from one end's to the other's. **Ball radius** sets the length. **Rings** are tori tumbling through each other, and **Ring
 fountain** is a level ring with balls winding round its tube, up through the hole
 and down outside, webbing to the rim as they pass. A "ball" can be a cube too: a
 turned cube core whose field gives a rounded cube, **Roundness** setting how round

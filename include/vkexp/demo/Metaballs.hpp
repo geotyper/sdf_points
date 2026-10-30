@@ -36,9 +36,9 @@ inline constexpr int metaballMotionCount = 11;
 inline constexpr std::array<const char*, metaballMotionCount> metaballMotionNames{
     "Orbits", "Cell division", "Lava lamp", "Worms", "Rings", "Ring fountain",
     "Dice", "Cube block", "Holes", "Peristalsis", "Cube carpet"};
-// Capsules tracing each worm in the Worms motion, and the most worms.
-inline constexpr int metaballWormSegments = 10;
-inline constexpr int metaballWormLimit = metaballLimit / metaballWormSegments;
+// Capsules tracing a worm in the Worms motion: the fewest and the most.
+inline constexpr int metaballWormLinksMin = 3;
+inline constexpr int metaballWormLinksMax = 32;
 
 struct MetaballParams {
     int motion{0};
@@ -49,6 +49,8 @@ struct MetaballParams {
     double spread{0.75};   // how far the balls travel
     double breathe{0.12};  // radii swelling and easing
     double roundness{0.3}; // a cube's rounding, as a share of its half size
+    double wormWidth{0.12}; // a worm's radius, the tail tapering from it
+    int wormLinks{12};      // capsules tracing a worm
     int seed{1};
 };
 
@@ -67,6 +69,7 @@ struct Metaball {
     double half{};
     int group{-1};
     double weight{1.0};
+    double taper{}; // a capsule's radius runs as radius * (1 + taper * s), s -1 .. 1 along the extent
 };
 
 namespace metaball_detail {
@@ -156,7 +159,14 @@ inline Vec3d across(const Vec3d& axis) {
             best = 0.0;
             weight = ball.weight;
         }
-        const double far = reach * ball.radius;
+        double radius = ball.radius;
+        const double e2 = metaball_detail::dot(ball.extent, ball.extent);
+        if (!ball.ring && !ball.cube && ball.taper != 0.0 && e2 > 1e-12) {
+            radius *= 1.0 + ball.taper * std::clamp(metaball_detail::dot(metaball_detail::add(p, ball.centre, -1.0),
+                                                                         ball.extent) / e2,
+                                                    -1.0, 1.0);
+        }
+        const double far = reach * radius;
         const Vec3d d = metaball_detail::add(p, metaballCore(ball, p), -1.0);
         const double q = 1.0 - metaball_detail::dot(d, d) / (far * far);
         if (q > 0.0) {
@@ -166,12 +176,21 @@ inline Vec3d across(const Vec3d& axis) {
     return sum + weight * best;
 }
 
+// Capsules tracing each worm, and the most worms they leave room for.
+[[nodiscard]] inline int metaballWormLinks(const MetaballParams& params) {
+    return std::clamp(params.wormLinks, metaballWormLinksMin, metaballWormLinksMax);
+}
+
+[[nodiscard]] inline int metaballWormLimit(const MetaballParams& params) {
+    return metaballLimit / metaballWormLinks(params);
+}
+
 // How many balls the motion makes of `params.balls`: Worms take that many
 // worms, Cube carpet the square it fills.
 [[nodiscard]] inline int metaballSceneCount(const MetaballParams& params) {
     const int asked = std::clamp(params.balls, 1, metaballLimit);
     if (params.motion == 3) {
-        return std::min(asked, metaballWormLimit) * metaballWormSegments;
+        return std::min(asked, metaballWormLimit(params)) * metaballWormLinks(params);
     }
     if (params.motion == 10) {
         const int side = std::clamp(static_cast<int>(std::ceil(std::sqrt(static_cast<double>(asked)) - 1e-9)), 1, 8);
@@ -204,8 +223,9 @@ inline Vec3d across(const Vec3d& axis) {
             // bends running from head to tail. The worm's capsules, one
             // group, trace the curve, so the tube has no joints.
             using namespace metaball_detail;
-            const int worm = i / metaballWormSegments;
-            const int link = i % metaballWormSegments;
+            const int links = metaballWormLinks(params);
+            const int worm = i / links;
+            const int link = i % links;
             const auto wormHash = [&](const int salt) { return hash(worm, seed + salt); };
             const auto wormTurns = [&](const int salt) {
                 return (1.0 + std::floor(3.0 * wormHash(salt))) * (wormHash(salt + 50) < 0.5 ? -1.0 : 1.0);
@@ -224,12 +244,18 @@ inline Vec3d across(const Vec3d& axis) {
                 const double l = length(v);
                 return l > 1e-9 ? Vec3d{v[0] / l, v[1] / l, v[2] / l} : Vec3d{1.0, 0.0, 0.0};
             };
-            const double thick = 0.55 * params.radius *
-                                 std::max(1.0 + params.variation * (2.0 * wormHash(26) - 1.0), 0.2) *
-                                 (1.0 + params.breathe * std::sin(2.0 * phase + tau * wormHash(27)));
+            // Even thickness, the last third tapering to a quarter of it;
+            // the length goes with the ball radius.
+            const double thick = std::max(params.wormWidth, 0.005);
+            const double bodyLength = 5.0 * params.radius *
+                                      std::max(1.0 + params.variation * (2.0 * wormHash(26) - 1.0), 0.2);
+            const auto girth = [&](const double s) {
+                const double u = std::clamp(3.0 * s - 2.0, 0.0, 1.0);
+                return thick * (1.0 - 0.75 * u * u * (2.0 - u));
+            };
             const double speed = std::max(params.spread, 0.05) *
                                  std::sqrt(0.5 * (spin[0] * spin[0] + 0.64 * spin[1] * spin[1] + spin[2] * spin[2]));
-            const double behind = 9.0 * thick / speed;
+            const double behind = bodyLength / speed;
             const double wiggle = 6.0 + std::floor(4.0 * wormHash(28));
             const double up = 2.0 * wormHash(29) - 1.0;
             const Vec3d bend{std::sqrt(1.0 - up * up) * std::cos(tau * wormHash(30)), up,
@@ -240,14 +266,18 @@ inline Vec3d across(const Vec3d& axis) {
                 Vec3d side = cross(along, bend);
                 const double l = length(side);
                 side = l > 1e-6 ? Vec3d{side[0] / l, side[1] / l, side[2] / l} : across(along);
-                const double sway = thick * (0.3 + 1.1 * s) * std::sin(tau * 1.25 * s - wiggle * phase);
+                const double sway = 0.11 * bodyLength * (0.3 + 1.1 * s) * std::sin(tau * 1.25 * s - wiggle * phase);
                 return add(path(t), side, sway);
             };
-            const Vec3d front = body(static_cast<double>(link) / metaballWormSegments);
-            const Vec3d back = body(static_cast<double>(link + 1) / metaballWormSegments);
+            const double sFront = static_cast<double>(link) / links;
+            const double sBack = static_cast<double>(link + 1) / links;
+            const Vec3d front = body(sFront);
+            const Vec3d back = body(sBack);
             ball.centre = {0.5 * (front[0] + back[0]), 0.5 * (front[1] + back[1]), 0.5 * (front[2] + back[2])};
             ball.extent = {0.5 * (front[0] - back[0]), 0.5 * (front[1] - back[1]), 0.5 * (front[2] - back[2])};
-            ball.radius = thick * (1.0 - 0.45 * (link + 0.5) / metaballWormSegments);
+            // A cone from the front's girth to the back's.
+            ball.radius = 0.5 * (girth(sFront) + girth(sBack));
+            ball.taper = (girth(sFront) - girth(sBack)) / (girth(sFront) + girth(sBack));
             ball.group = worm;
             continue;
         }

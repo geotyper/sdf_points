@@ -910,6 +910,24 @@ void testMetaballs() {
                   vkexp::metaballField({cube}, 2.0, {0.2 + 0.4, 0.0, 0.0}) > vkexp::metaballThreshold(2.0) &&
                   vkexp::metaballField({cube}, 2.0, {0.2 + 0.3, 0.29, 0.0}) == 1.0,
               "Turned cube");
+        // A tapering capsule: its radius runs from one end's to the other's.
+        vkexp::Metaball cone{{0.0, 0.0, 0.0}, 0.15};
+        cone.extent = {0.5, 0.0, 0.0};
+        cone.taper = 1.0 / 3.0;
+        check(std::abs(vkexp::metaballRay({cone}, 2.0, {0.5, 0.0, 0.0}, 0.1, {0.0, 1.0, 0.0}) - 0.2) < 1e-3 &&
+                  std::abs(vkexp::metaballRay({cone}, 2.0, {-0.5, 0.0, 0.0}, 0.05, {0.0, 1.0, 0.0}) - 0.1) < 1e-3,
+              "Tapering capsule");
+        // A worm keeps its thickness, its tail tapering to a quarter.
+        vkexp::MetaballParams wormParams;
+        wormParams.motion = 3;
+        wormParams.balls = 2;
+        wormParams.wormLinks = 9;
+        const auto worms = vkexp::metaballScene(wormParams, 1.0);
+        check(worms.size() == 18 && std::abs(worms[0].radius - wormParams.wormWidth) < 1e-9 &&
+                  std::abs(worms[5].radius - wormParams.wormWidth) < 1e-9 &&
+                  std::abs(worms[8].radius * (1.0 - worms[8].taper) - 0.25 * wormParams.wormWidth) < 1e-9 &&
+                  worms[9].group != worms[8].group,
+              "Worm thickness and tail");
         // A ball of negative weight dents a ball it overlaps.
         const vkexp::Metaball solid{{0.0, 0.0, 0.0}, 0.4};
         vkexp::Metaball hollow{{0.5, 0.0, 0.0}, 0.2};

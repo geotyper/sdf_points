@@ -836,10 +836,13 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
             ballParams.breathe = metaballs.breathe;
             ballParams.seed = metaballs.seed;
             ballParams.roundness = metaballs.roundness;
+            ballParams.wormWidth = metaballs.wormWidth;
+            ballParams.wormLinks = metaballs.wormLinks;
             const std::vector<double> shapeKey{
                 static_cast<double>(metaballs.motion), static_cast<double>(metaballs.balls),
                 metaballs.radius, metaballs.variation, metaballs.reach, metaballs.spread,
-                metaballs.breathe, static_cast<double>(metaballs.seed), metaballs.roundness};
+                metaballs.breathe, static_cast<double>(metaballs.seed), metaballs.roundness,
+                metaballs.wormWidth, static_cast<double>(metaballs.wormLinks)};
             if (shapeKey != metaballKey_) {
                 metaballKey_ = shapeKey;
                 metaballBound_ = metaballBound(ballParams);
@@ -893,6 +896,7 @@ void GraphicsModule::onRender(AppContext& context, const FrameInfo&) {
                 out[20] = static_cast<float>(balls[i].half);
                 out[21] = static_cast<float>(metaballBefore_[i].half);
                 out[22] = static_cast<float>(balls[i].weight);
+                out[23] = static_cast<float>(balls[i].taper);
             }
             float* header = data.data() + static_cast<std::size_t>(metaballLimit) * metaballVec4 * 4U;
             // Neighbours within two and a half spacings; their summed weight

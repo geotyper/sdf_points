@@ -103,6 +103,7 @@ bool sampleSurface(int index, uint attempt, out vec3 p) {
     float major = length(extent.xyz);
     float stretch = 1.0;
     float step = 0.15 * b.w;
+    float radius = b.w;
     if (extent.w > 1.5) {
         float halfSize = metaball(ball, 5).x;
         vec3 inside = vec3(chance(index, attempt, 4u), chance(index, attempt, 5u), chance(index, attempt, 6u));
@@ -117,9 +118,12 @@ bool sampleSurface(int index, uint attempt, out vec3 p) {
         direction = cos(around) * radial + sin(around) * axis;
         stretch = (major + b.w * cos(around)) / (major + b.w);
     } else if (major > 1e-6) {
-        origin += (2.0 * chance(index, attempt, 4u) - 1.0) * extent.xyz;
+        float along = 2.0 * chance(index, attempt, 4u) - 1.0;
+        origin += along * extent.xyz;
+        radius *= 1.0 + metaball(ball, 5).w * along;
+        step = 0.15 * radius;
     }
-    float t = metaballRay(origin, b.w, step, direction);
+    float t = metaballRay(origin, radius, step, direction);
     if (t <= 0.0) return false;
     p = origin + t * direction;
     float sharpness = max(pc.motion.w, 0.5);
@@ -137,7 +141,7 @@ bool sampleSurface(int index, uint attempt, out vec3 p) {
         vec3 gradient;
         metaballField(p, gradient);
         float slant = max(dot(normalize(-gradient + vec3(1e-9, 0.0, 0.0)), direction), 0.15);
-        stretch = t * t / (b.w * b.w * slant);
+        stretch = t * t / (radius * radius * slant);
     }
     float keep = own / max(weights, 1e-30) * stretch / max(pc.motion.z, 1.0);
     return chance(index, attempt, 3u) < keep;

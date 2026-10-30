@@ -652,12 +652,25 @@ void DemoUiModule::onUpdate(AppContext& context, const FrameInfo& frame) {
                      static_cast<int>(metaballMotionNames.size()));
         ImGui::SliderInt("Balls", &balls.balls, 1, metaballLimit);
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Worms: the worms (up to %d). Rings: the rings. Ring fountain: the "
+            ImGui::SetTooltip("Worms: the worms (as many as %d capsules a worm leave room for). Rings: the rings. Ring fountain: the "
                               "ring and the balls winding through it. Cube block: the cubes, filling "
                               "a block row by row (8 or 27 make it whole). Holes: a third are the "
                               "blob, the rest carve. Peristalsis: the capsule and its rings. Cube "
                               "carpet: the cubes, rounded up to a square (up to 8 by 8).",
-                              metaballWormLimit);
+                              metaballLimit);
+        }
+        if (balls.motion == 3) {
+            ImGui::SliderFloat("Worm thickness", &balls.wormWidth, 0.02F, 0.35F, "%.3f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("The worms' radius, even along the body; the last third tapers "
+                                  "to a quarter of it. Ball radius sets the length.");
+            }
+            ImGui::SliderInt("Worm links", &balls.wormLinks, metaballWormLinksMin, metaballWormLinksMax);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Capsules tracing each worm: more follow the bends closer but leave "
+                                  "room for fewer worms (%d capsules in all).",
+                                  metaballLimit);
+            }
         }
         if (balls.motion == 6 || balls.motion == 7 || balls.motion == 10) {
             ImGui::SliderFloat("Roundness", &balls.roundness, 0.08F, 1.0F, "%.2f");

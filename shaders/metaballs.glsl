@@ -19,7 +19,8 @@
 // The polytope storage buffer holds six vec4 per ball (centre and radius,
 // colour and where its share of the area starts, extent and kind, centre and
 // radius the frame before, extent the frame before and group, a cube's half
-// size now and the frame before and its field's weight), then from
+// size now and the frame before, its field's weight, a capsule's taper),
+// then from
 // METABALL_HEADER: (reset, frame number, particles, fade step), (neighbour
 // reach, neighbours' weight at the rest density, hash table cells, spacing),
 // (particles to start with, push strength, density tolerance, 0).
@@ -28,7 +29,9 @@
 // capsule), or with kind 1 a ring of radius |extent| about the extent's axis
 // (a torus), or with kind 2 a cube of half size `halfSize` turned by the unit
 // quaternion whose x, y, z are the extent (w >= 0), its surface a rounded
-// cube. Its field falls off with the distance from the nearest point of
+// cube. A capsule may taper: its radius runs as 1 + taper * s along the
+// segment, s from -1 at centre - extent to 1 at centre + extent. Its field
+// falls off with the distance from the nearest point of
 // the core. Balls of one group (consecutive, as a worm's segments) take the
 // strongest of their fields instead of the sum, so a chain is one smooth tube
 // with no bulge at the joints; groups add up as before, each times its
@@ -106,9 +109,14 @@ vec3 metaballCore(vec4 ball, vec4 extent, float halfSize, vec3 p) {
 // 1 - d^2 / R^2 for ball `ball` at `p` (the kernel is its cube where
 // positive), d the offset from the core and R the field's reach.
 float metaballFalloff(int ball, vec3 p, out vec3 offset, out float far) {
-    vec4 b = metaball(ball, 0);
-    offset = p - metaballCore(b, metaball(ball, 2), metaball(ball, 5).x, p);
-    far = pc.motion.y * b.w;
+    vec4 b = metaball(ball, 0), extent = metaball(ball, 2), shape = metaball(ball, 5);
+    offset = p - metaballCore(b, extent, shape.x, p);
+    float radius = b.w;
+    float e2 = dot(extent.xyz, extent.xyz);
+    if (extent.w < 0.5 && shape.w != 0.0 && e2 > 1e-12) {
+        radius *= 1.0 + shape.w * clamp(dot(p - b.xyz, extent.xyz) / e2, -1.0, 1.0);
+    }
+    far = pc.motion.y * radius;
     return 1.0 - dot(offset, offset) / (far * far);
 }
 
